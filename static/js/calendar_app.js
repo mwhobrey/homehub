@@ -36,10 +36,10 @@
   let eventColorPicker = null;
   let pendingMove = null;
   let resizeState = null;
-  const scopeModal = $('calRecurringScopeModal');
-  const conflictPanel = $('calConflictPanel');
 
   const $ = (id) => document.getElementById(id);
+  const scopeModal = $('calRecurringScopeModal');
+  const conflictPanel = $('calConflictPanel');
   const monthView = $('calMonthView');
   const weekView = $('calWeekView');
   const agendaView = $('calAgendaView');
