@@ -39,7 +39,14 @@ from ..user_context import current_email, uses_firebase
 from . import main_bp
 
 OAUTH_CALLBACK = 'main.google_calendar_oauth_callback'
+SESSION_OAUTH_STATE = 'google_calendar_oauth_state'
+SESSION_OAUTH_CODE_VERIFIER = 'google_calendar_oauth_code_verifier'
 ALLOWED_VISIBILITY = {'private', 'household', 'custom'}
+
+
+def _clear_oauth_session() -> None:
+    session.pop(SESSION_OAUTH_STATE, None)
+    session.pop(SESSION_OAUTH_CODE_VERIFIER, None)
 
 
 def _gcal_cfg() -> dict:
@@ -105,7 +112,7 @@ def google_calendar_oauth_start():
     if not uid:
         return redirect(url_for('main.login', next=request.path))
     nonce = secrets.token_urlsafe(16)
-    session['google_calendar_oauth_state'] = nonce
+    session[SESSION_OAUTH_STATE] = nonce
     redirect_uri = url_for(OAUTH_CALLBACK, _external=True)
     flow = _flow(redirect_uri)
     auth_url, _ = flow.authorization_url(
@@ -114,6 +121,10 @@ def google_calendar_oauth_start():
         prompt='consent',
         state=nonce,
     )
+    if not flow.code_verifier:
+        current_app.logger.error('google calendar oauth: missing PKCE code_verifier after authorization_url')
+        return redirect(url_for('main.calendar_page', calendar_error='oauth_failed'))
+    session[SESSION_OAUTH_CODE_VERIFIER] = flow.code_verifier
     conn = CalendarConnection.query.filter_by(firebase_uid=uid).first()
     if not conn:
         conn = CalendarConnection(
@@ -138,15 +149,22 @@ def google_calendar_oauth_callback():
     if not uid:
         return redirect(url_for('main.login'))
     state = request.args.get('state')
-    if not state or state != session.get('google_calendar_oauth_state'):
+    if not state or state != session.get(SESSION_OAUTH_STATE):
         return redirect(url_for('main.index', calendar_error='invalid_state'))
+    code_verifier = session.pop(SESSION_OAUTH_CODE_VERIFIER, None)
+    if not code_verifier:
+        current_app.logger.error('google calendar oauth callback: missing PKCE code_verifier in session')
+        _clear_oauth_session()
+        return redirect(url_for('main.calendar_page', calendar_error='oauth_failed'))
     redirect_uri = url_for(OAUTH_CALLBACK, _external=True)
     flow = _flow(redirect_uri)
+    flow.code_verifier = code_verifier
+    flow.autogenerate_code_verifier = False
     try:
         flow.fetch_token(authorization_response=request.url)
     except Exception:
         current_app.logger.exception('google calendar oauth token exchange failed')
-        session.pop('google_calendar_oauth_state', None)
+        _clear_oauth_session()
         return redirect(url_for('main.calendar_page', calendar_error='oauth_failed'))
     creds = flow.credentials
     conn = CalendarConnection.query.filter_by(firebase_uid=uid).first()
@@ -158,6 +176,7 @@ def google_calendar_oauth_callback():
     conn.token_expiry = creds.expiry
     conn.connected_at = datetime.utcnow()
     db.session.commit()
+    _clear_oauth_session()
 
     from ..google_calendar.client import get_calendar_service
     service = get_calendar_service(conn)
@@ -392,5 +411,5 @@ def api_calendar_disconnect():
     LinkedCalendar.query.filter_by(connection_id=conn.id).delete()
     db.session.delete(conn)
     db.session.commit()
-    session.pop('google_calendar_oauth_state', None)
+    _clear_oauth_session()
     return jsonify({'ok': True})

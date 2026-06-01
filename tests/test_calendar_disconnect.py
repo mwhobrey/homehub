@@ -1,5 +1,7 @@
 """Google Calendar disconnect and connection status."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app import create_app, db
@@ -67,6 +69,20 @@ def test_status_connected_with_tokens(client):
     r = c.get('/api/calendar/status')
     data = r.get_json()
     assert data['connected'] is True
+
+
+@patch('app.blueprints.calendar_sync._flow')
+def test_oauth_start_stores_pkce_verifier(mock_flow_factory, client):
+    _app, c = client
+    mock_flow = MagicMock()
+    mock_flow.authorization_url.return_value = ('https://accounts.google.com/o/oauth2/auth', 'state-nonce')
+    mock_flow.code_verifier = 'pkce-verifier-1234567890123456789012345678901234567890'
+    mock_flow_factory.return_value = mock_flow
+    r = c.get('/auth/google/calendar/start', follow_redirects=False)
+    assert r.status_code == 302
+    with c.session_transaction() as sess:
+        assert sess.get('google_calendar_oauth_code_verifier') == mock_flow.code_verifier
+        assert sess.get('google_calendar_oauth_state')
 
 
 def test_disconnect_removes_connection(client):

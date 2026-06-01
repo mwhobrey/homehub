@@ -288,6 +288,7 @@ Run as Parent A, Parent B, and Teen (if applicable):
 |---------|----------------|-----|
 | `client_secret is missing` on OAuth callback | Secret not in container env or `config.yml` | Set `GOOGLE_CALENDAR_CLIENT_SECRET` in `.env` **and** pass it in `compose.prod.yml` `environment:` (or put `client_secret` in `config.yml`); recreate container |
 | Stuck after failed OAuth / cannot reconnect | Partial `calendar_connection` row without tokens | Calendar → **Setup** → **Disconnect**, then connect again |
+| `Missing code verifier` on callback | PKCE verifier not kept between redirect and token exchange (old builds) | Pull latest; use one browser tab; do not restart container mid-OAuth |
 | `redirect_uri_mismatch` | GCP redirect URI ≠ actual callback URL | Fix URI in Credentials; include exact path `/auth/google/calendar/callback` |
 | `access_denied` / app blocked | User not on OAuth **test users** list | Add Gmail in consent screen, or publish app |
 | `google_calendar_disabled` API | `enabled: false` or not Firebase mode | Check `config.yml` |
