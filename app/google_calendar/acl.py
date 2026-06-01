@@ -126,13 +126,20 @@ def get_connection_for_uid(uid: str | None = None) -> CalendarConnection | None:
     return CalendarConnection.query.filter_by(firebase_uid=uid).first()
 
 
+def calendar_connection_active(conn: CalendarConnection | None) -> bool:
+    """True when OAuth completed and tokens are stored (not merely oauth start)."""
+    if not conn:
+        return False
+    return bool((conn.refresh_token_enc or '').strip() or (conn.access_token_enc or '').strip())
+
+
 def resolve_writable_calendar(
     linked_calendar_id: int | None,
     uid: str | None = None,
 ) -> LinkedCalendar | None:
     uid = uid or _viewer_uid()
     conn = get_connection_for_uid(uid)
-    if not conn:
+    if not conn or not calendar_connection_active(conn):
         return None
     if linked_calendar_id:
         lc = LinkedCalendar.query.get(linked_calendar_id)

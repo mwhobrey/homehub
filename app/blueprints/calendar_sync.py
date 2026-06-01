@@ -17,6 +17,7 @@ from google_auth_oauthlib.flow import Flow
 
 from ..extensions import limiter
 from ..google_calendar.acl import (
+    calendar_connection_active,
     can_view_linked_calendar,
     get_connection_for_uid,
     google_calendar_enabled,
@@ -141,7 +142,12 @@ def google_calendar_oauth_callback():
         return redirect(url_for('main.index', calendar_error='invalid_state'))
     redirect_uri = url_for(OAUTH_CALLBACK, _external=True)
     flow = _flow(redirect_uri)
-    flow.fetch_token(authorization_response=request.url)
+    try:
+        flow.fetch_token(authorization_response=request.url)
+    except Exception:
+        current_app.logger.exception('google calendar oauth token exchange failed')
+        session.pop('google_calendar_oauth_state', None)
+        return redirect(url_for('main.calendar_page', calendar_error='oauth_failed'))
     creds = flow.credentials
     conn = CalendarConnection.query.filter_by(firebase_uid=uid).first()
     if not conn:
@@ -196,7 +202,7 @@ def google_calendar_oauth_callback():
         sync_connection(conn)
     except Exception:
         current_app.logger.exception('initial calendar sync failed')
-    return redirect(url_for('main.index', calendar_connected='1'))
+    return redirect(url_for('main.calendar_page', calendar_connected='1'))
 
 
 @main_bp.route('/api/calendar/status')
@@ -208,6 +214,12 @@ def api_calendar_status():
     conn = get_connection_for_uid(uid)
     if not conn:
         return jsonify({'ok': True, 'connected': False})
+    if not calendar_connection_active(conn):
+        return jsonify({
+            'ok': True,
+            'connected': False,
+            'connection_incomplete': True,
+        })
     cals = LinkedCalendar.query.filter_by(connection_id=conn.id).count()
     return jsonify({
         'ok': True,
@@ -225,7 +237,7 @@ def api_calendar_writable():
         return err
     uid = session.get('firebase_uid')
     conn = get_connection_for_uid(uid)
-    if not conn:
+    if not conn or not calendar_connection_active(conn):
         return jsonify({'ok': True, 'calendars': []})
     out = []
     for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).all():
@@ -246,7 +258,7 @@ def api_calendar_list():
     viewer_uid = session.get('firebase_uid')
     conn = get_connection_for_uid(viewer_uid)
     own = []
-    if conn:
+    if conn and calendar_connection_active(conn):
         own = [_serialize_linked(lc, viewer_uid, conn) for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).all()]
     visible = []
     for lc in LinkedCalendar.query.all():
@@ -354,7 +366,7 @@ def api_calendar_sync_now():
         return err
     uid = session.get('firebase_uid')
     conn = get_connection_for_uid(uid)
-    if not conn:
+    if not conn or not calendar_connection_active(conn):
         return jsonify({'ok': False, 'error': 'not_connected'}), 400
     sync_connection(conn)
     return jsonify({'ok': True, 'last_sync_at': conn.last_sync_at.isoformat() if conn.last_sync_at else None})
@@ -380,4 +392,5 @@ def api_calendar_disconnect():
     LinkedCalendar.query.filter_by(connection_id=conn.id).delete()
     db.session.delete(conn)
     db.session.commit()
+    session.pop('google_calendar_oauth_state', None)
     return jsonify({'ok': True})

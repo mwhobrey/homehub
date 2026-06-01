@@ -5,6 +5,10 @@
   if (!window.calendarSyncApi) return;
 
   const banner = document.getElementById('calendarConnectBanner');
+  const bannerText = document.getElementById('calendarConnectBannerText');
+  const connectedPanel = document.getElementById('calendarConnectedPanel');
+  const disconnectBtn = document.getElementById('calDisconnect');
+  const disconnectConnectedBtn = document.getElementById('calDisconnectConnected');
   const writeRow = document.getElementById('writeCalendarRow');
   const writeSelect = document.getElementById('writeCalendarSelect');
   const writeHint = document.getElementById('writeCalendarHint');
@@ -133,14 +137,37 @@
       .replace(/>/g, '&gt;');
   }
 
+  function showConnectBanner(message, showDisconnect) {
+    if (bannerText && message) bannerText.textContent = message;
+    if (banner) banner.classList.remove('hidden');
+    if (connectedPanel) connectedPanel.classList.add('hidden');
+    if (disconnectBtn) disconnectBtn.classList.toggle('hidden', !showDisconnect);
+  }
+
+  function showConnectedPanel() {
+    if (banner) banner.classList.add('hidden');
+    if (connectedPanel) connectedPanel.classList.remove('hidden');
+    if (disconnectBtn) disconnectBtn.classList.add('hidden');
+  }
+
   async function loadManager() {
     const st = await window.calendarSyncApi.status();
-    if (banner) {
-      banner.classList.toggle('hidden', !!st.connected);
+    if (!st.connected) {
+      const msg = st.connection_incomplete
+        ? 'Google sign-in did not finish. Disconnect to clear the partial link, then connect again.'
+        : 'Connect Google Calendar to sync household schedules.';
+      showConnectBanner(msg, !!st.connection_incomplete);
+      if (ownList) ownList.innerHTML = '';
+      if (visibleList) visibleList.innerHTML = '';
+      writableCalendars = [];
+      populateWriteSelect();
+      return;
     }
-    if (!st.connected) return;
+    showConnectedPanel();
     if (lastSyncEl && st.last_sync_at) {
       lastSyncEl.textContent = 'Last sync: ' + new Date(st.last_sync_at).toLocaleString();
+    } else if (lastSyncEl) {
+      lastSyncEl.textContent = '';
     }
     const data = await window.calendarSyncApi.calendars();
     if (!data.ok) return;
@@ -168,6 +195,31 @@
       window.calendarSyncApi.patchCalendar(id, { set_default: true }).then(loadWritable);
     });
   }
+  async function runDisconnect(btn) {
+    if (!window.confirm('Disconnect Google Calendar from HomeHub?')) return;
+    const removeEvents = window.confirm(
+      'Delete events that were imported from Google?\n\nOK = delete them\nCancel = keep them on your calendar'
+    );
+    if (btn) btn.disabled = true;
+    try {
+      await window.calendarSyncApi.disconnect(removeEvents);
+      await loadManager();
+      if (window.homehubCalendarApp && typeof window.homehubCalendarApp.reload === 'function') {
+        await window.homehubCalendarApp.reload();
+      }
+    } catch (e) {
+      console.error('disconnect', e);
+      window.alert('Could not disconnect. Try again or contact the operator.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  if (disconnectBtn) disconnectBtn.addEventListener('click', () => runDisconnect(disconnectBtn));
+  if (disconnectConnectedBtn) {
+    disconnectConnectedBtn.addEventListener('click', () => runDisconnect(disconnectConnectedBtn));
+  }
+
   if (syncBtn) {
     syncBtn.addEventListener('click', async () => {
       syncBtn.disabled = true;
@@ -196,11 +248,26 @@
     refresh: loadManager,
   };
 
+  function openSetupTab() {
+    document.querySelector('.cal-side-tab[data-tab="setup"]')?.click();
+  }
+
   const params = new URLSearchParams(window.location.search);
   if (params.get('connect_calendar') === '1' && banner) {
     banner.classList.remove('hidden');
+    openSetupTab();
   }
   if (params.get('calendar_connected') === '1') {
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+  const calErr = params.get('calendar_error');
+  if (calErr) {
+    const errMsg =
+      calErr === 'oauth_failed'
+        ? 'Google authorization failed (often a missing client secret on the server). Disconnect if needed, fix config, then connect again.'
+        : 'Calendar connection error. Try disconnecting and connecting again.';
+    showConnectBanner(errMsg, true);
+    openSetupTab();
     window.history.replaceState({}, '', window.location.pathname);
   }
 

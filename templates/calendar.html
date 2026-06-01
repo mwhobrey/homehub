@@ -167,11 +167,21 @@
 
         <div id="calSideSetup" class="hidden text-sm space-y-3">
           {% if google_calendar_enabled %}
-          <div id="calendarConnectBanner" class="p-2 rounded border border-blue-200 bg-blue-50 dark:bg-slate-800 text-xs">
-            <span>Connect Google Calendar to sync household schedules.</span>
-            <a href="/auth/google/calendar/start" class="btn btn-primary text-xs py-1 mt-2 inline-block">Connect Google</a>
+          <div id="calendarConnectBanner" class="p-2 rounded border border-blue-200 bg-blue-50 dark:bg-slate-800 text-xs space-y-2">
+            <p id="calendarConnectBannerText">Connect Google Calendar to sync household schedules.</p>
+            <div class="flex flex-wrap gap-2">
+              <a href="/auth/google/calendar/start" class="btn btn-primary text-xs py-1 inline-block">Connect Google</a>
+              <button type="button" id="calDisconnect" class="hidden px-3 py-1 text-xs rounded border border-red-300 text-red-700 hover:bg-red-50 dark:hover:bg-red-950">
+                Disconnect
+              </button>
+            </div>
           </div>
-          <p id="calendarLastSync" class="text-xs text-gray-500"></p>
+          <div id="calendarConnectedPanel" class="hidden space-y-2">
+            <p id="calendarLastSync" class="text-xs text-gray-500"></p>
+            <button type="button" id="calDisconnectConnected" class="px-3 py-1.5 text-xs rounded border border-red-300 text-red-700 hover:bg-red-50 dark:hover:bg-red-950">
+              Disconnect Google
+            </button>
+          </div>
           <div>
             <label class="block text-xs font-semibold mb-1">Default write calendar</label>
             <select id="defaultWriteCalendarSelect" class="w-full h-9 border rounded px-2"></select>
