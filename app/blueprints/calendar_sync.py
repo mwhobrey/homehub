@@ -41,6 +41,12 @@ from . import main_bp
 OAUTH_CALLBACK = 'main.google_calendar_oauth_callback'
 SESSION_OAUTH_STATE = 'google_calendar_oauth_state'
 SESSION_OAUTH_CODE_VERIFIER = 'google_calendar_oauth_code_verifier'
+OAUTH_SCOPES = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/calendar',
+]
 ALLOWED_VISIBILITY = {'private', 'household', 'custom'}
 
 
@@ -73,7 +79,7 @@ def _flow(redirect_uri: str) -> Flow:
     }
     return Flow.from_client_config(
         client_config,
-        scopes=['https://www.googleapis.com/auth/calendar'],
+        scopes=OAUTH_SCOPES,
         redirect_uri=redirect_uri,
     )
 
