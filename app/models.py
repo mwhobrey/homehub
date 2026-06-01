@@ -129,6 +129,75 @@ class Reminder(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Tie back to a recurring rule (if generated)
     recurring_id = db.Column(db.Integer)
+    # Google Calendar sync
+    source = db.Column(db.String(16), default='local')  # local | google
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'))
+    google_event_id = db.Column(db.String(256))
+    google_recurring_event_id = db.Column(db.String(256))
+    google_etag = db.Column(db.String(128))
+    google_updated = db.Column(db.String(64))
+    owner_uid = db.Column(db.String(128))
+    sync_status = db.Column(db.String(32), default='synced')
+    all_day = db.Column(db.Boolean, default=False)
+
+
+class CalendarConnection(db.Model):
+    __tablename__ = 'calendar_connection'
+    id = db.Column(db.Integer, primary_key=True)
+    firebase_uid = db.Column(db.String(128), unique=True, nullable=False)
+    firebase_email = db.Column(db.String(256))
+    refresh_token_enc = db.Column(db.Text)
+    access_token_enc = db.Column(db.Text)
+    token_expiry = db.Column(db.DateTime)
+    default_linked_calendar_id = db.Column(db.Integer, nullable=True)
+    time_zone = db.Column(db.String(64), default='UTC')
+    oauth_state_nonce = db.Column(db.String(64))
+    connected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_sync_at = db.Column(db.DateTime)
+
+
+class LinkedCalendar(db.Model):
+    __tablename__ = 'linked_calendar'
+    id = db.Column(db.Integer, primary_key=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey('calendar_connection.id'), nullable=False)
+    google_calendar_id = db.Column(db.String(256), nullable=False)
+    summary = db.Column(db.String(256))
+    background_color = db.Column(db.String(32))
+    sync_enabled = db.Column(db.Boolean, default=True)
+    visibility = db.Column(db.String(16), default='household')  # private | household | custom
+    sync_token = db.Column(db.Text)
+    last_sync_at = db.Column(db.DateTime)
+    last_sync_error = db.Column(db.Text)
+    connection = db.relationship('CalendarConnection', backref=db.backref('calendars', lazy=True))
+
+
+class CalendarShare(db.Model):
+    __tablename__ = 'calendar_share'
+    id = db.Column(db.Integer, primary_key=True)
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'), nullable=False)
+    grantee_uid = db.Column(db.String(128), nullable=False)
+    can_write = db.Column(db.Boolean, default=False)
+    linked_calendar = db.relationship('LinkedCalendar', backref=db.backref('shares', lazy=True))
+
+
+class CalendarDisplayPref(db.Model):
+    __tablename__ = 'calendar_display_pref'
+    id = db.Column(db.Integer, primary_key=True)
+    viewer_uid = db.Column(db.String(128), nullable=False)
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'), nullable=False)
+    visible = db.Column(db.Boolean, default=True)
+    __table_args__ = (db.UniqueConstraint('viewer_uid', 'linked_calendar_id', name='uq_calendar_display_pref'),)
+
+
+class CalendarSyncOutbox(db.Model):
+    __tablename__ = 'calendar_sync_outbox'
+    id = db.Column(db.Integer, primary_key=True)
+    reminder_id = db.Column(db.Integer, db.ForeignKey('reminder.id'))
+    operation = db.Column(db.String(16), nullable=False)  # create | update | delete | move
+    payload_json = db.Column(db.Text)
+    attempts = db.Column(db.Integer, default=0)
+    last_error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class MemberStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)

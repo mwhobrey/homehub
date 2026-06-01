@@ -94,3 +94,12 @@ def resolve_user_from_args() -> str:
     if uses_firebase():
         return current_display_name()
     return sanitize_text(request.args.get('user') or request.args.get('creator') or '')
+
+
+def current_firebase_uid() -> str:
+    return session.get('firebase_uid') or ''
+
+
+def can_modify_reminder(reminder) -> bool:
+    from .google_calendar.acl import can_modify_reminder as _can
+    return _can(reminder)

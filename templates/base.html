@@ -368,6 +368,7 @@
     
 </body>
 <script src="/static/js/reminders_api.js"></script>
+{% if uses_firebase and config.get('google_calendar', {}).get('enabled') %}<script src="/static/js/calendar_sync.js"></script>{% endif %}
 <script>
 // Register Service Worker for PWA
 (function(){

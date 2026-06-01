@@ -34,6 +34,9 @@ def _public_endpoints() -> set[str]:
         'main.auth_config',
         'main.auth_session',
         'main.auth_logout',
+        'main.google_calendar_oauth_callback',
+        'main.privacy',
+        'main.terms',
     }
     return base
 
@@ -66,6 +69,33 @@ def reload_config_and_require_auth():
             return redirect(url_for('main.login', next=request.path))
     elif endpoint == 'main.login':
         return redirect(url_for('main.index'))
+
+
+@main_bp.route('/privacy')
+def privacy():
+    config = current_app.config['HOMEHUB_CONFIG']
+    legal = config.get('legal') or {}
+    admin_emails = (config.get('auth') or {}).get('admin_emails') or []
+    contact = legal.get('contact_email') or (admin_emails[0] if admin_emails else '')
+    return render_template(
+        'privacy.html',
+        config=config,
+        operator_contact=contact,
+        policy_updated=legal.get('policy_updated', '2026-06-01'),
+        hide_user_ui=True,
+    )
+
+
+@main_bp.route('/terms')
+def terms():
+    config = current_app.config['HOMEHUB_CONFIG']
+    legal = config.get('legal') or {}
+    return render_template(
+        'terms.html',
+        config=config,
+        policy_updated=legal.get('policy_updated', '2026-06-01'),
+        hide_user_ui=True,
+    )
 
 
 @main_bp.route('/login', methods=['GET'])

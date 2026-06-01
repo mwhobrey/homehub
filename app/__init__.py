@@ -9,6 +9,37 @@ from datetime import timedelta
 
 db = SQLAlchemy()
 
+_calendar_scheduler_started = False
+
+
+def _start_calendar_sync_scheduler(app):
+    global _calendar_scheduler_started
+    if _calendar_scheduler_started:
+        return
+    cfg = (app.config.get('HOMEHUB_CONFIG') or {}).get('google_calendar') or {}
+    if not cfg.get('enabled'):
+        return
+    interval = int(cfg.get('sync_interval_minutes') or 15)
+    if interval < 1:
+        interval = 15
+
+    def _tick():
+        with app.app_context():
+            try:
+                from .google_calendar.sync import sync_all_connections
+                sync_all_connections()
+            except Exception:
+                app.logger.exception('calendar sync scheduler tick failed')
+        try:
+            import threading
+            threading.Timer(interval * 60, _tick).start()
+        except Exception:
+            pass
+
+    import threading
+    threading.Timer(30, _tick).start()
+    _calendar_scheduler_started = True
+
 
 def create_app(test_config: dict | None = None):
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -151,6 +182,15 @@ def create_app(test_config: dict | None = None):
                 ensure_column(_QRCode.__tablename__, 'display_label', 'TEXT', None)
                 ensure_column(_QRCode.__tablename__, 'is_wifi', 'INTEGER', 0)
                 ensure_column(_Reminder.__tablename__, 'recurring_id', 'INTEGER', None)
+                ensure_column(_Reminder.__tablename__, 'source', 'TEXT', 'local')
+                ensure_column(_Reminder.__tablename__, 'linked_calendar_id', 'INTEGER', None)
+                ensure_column(_Reminder.__tablename__, 'google_event_id', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'google_recurring_event_id', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'google_etag', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'google_updated', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'owner_uid', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'sync_status', 'TEXT', 'synced')
+                ensure_column(_Reminder.__tablename__, 'all_day', 'INTEGER', 0)
                 # Add 'tags' to recipe for multi-tag feature
                 if not has_column('recipe', 'tags'):
                     cur.execute("ALTER TABLE recipe ADD COLUMN tags TEXT DEFAULT '[]'")
@@ -239,7 +279,11 @@ def create_app(test_config: dict | None = None):
     from .blueprints import chores  # noqa: F401
     from .blueprints import qr  # noqa: F401
     from .blueprints import weather  # noqa: F401
+    from .blueprints import calendar_sync  # noqa: F401
     app.register_blueprint(main_bp)
+
+    if not app.config.get('TESTING'):
+        _start_calendar_sync_scheduler(app)
 
     @app.context_processor
     def inject_auth_state():

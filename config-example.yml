@@ -59,6 +59,20 @@ family_members:
   - Vivek
   - India
 
+# Legal pages for OAuth consent screen (/privacy, /terms) — set contact for your household
+legal:
+  contact_email: "you@gmail.com"
+  policy_updated: "2026-06-01"
+
+# Google Calendar bidirectional sync (requires auth.mode: firebase)
+google_calendar:
+  enabled: false
+  client_id: ""
+  client_secret: ""   # or set GOOGLE_CALENDAR_CLIENT_SECRET env
+  sync_interval_minutes: 15
+  default_timezone: "America/Chicago"
+  onboarding_all_calendars_enabled: true
+
 reminders:
   # time_format controls how reminder times are displayed in the UI.
   # Allowed values: "12h" (default) or "24h". Remove or leave blank to fall back to 12h.

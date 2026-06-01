@@ -32,6 +32,19 @@ If this server has **no** reverse proxy yet, use `compose.prod.with-caddy.yml` (
 
 In Firebase → **Authentication** → **Settings** → **Authorized domains**, add your public hostname (e.g. `home.yourdomain.com`).
 
+### Google Calendar sync (optional, bidirectional)
+
+Requires `auth.mode: firebase` and `google_calendar.enabled: true` in `config.yml`.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) (same project as Firebase is fine), enable **Google Calendar API**.
+2. **APIs & Services** → **Credentials** → **Create credentials** → **OAuth client ID** → **Web application**.
+3. Authorized redirect URIs:
+   - `https://home.yourdomain.com/auth/google/calendar/callback`
+   - `http://localhost:5000/auth/google/calendar/callback` (local dev)
+4. Copy **Client ID** and **Client secret** into `config.yml` under `google_calendar`, or set env `GOOGLE_CALENDAR_CLIENT_SECRET`.
+5. Deploy `/privacy` and `/terms` (built into HomeHub), then complete the OAuth consent screen using those URLs — see **[GOOGLE_CALENDAR_SETUP.md](./GOOGLE_CALENDAR_SETUP.md)** for the full operator checklist, family onboarding, and troubleshooting.
+6. After signing in with Firebase, open the dashboard and click **Connect Google Calendar** (one-time OAuth consent). All calendars import by default; set per-calendar visibility (private / household / custom shares) in **Google Calendars**.
+
 ## 2. DNS and droplet
 
 1. Point an **A record** at your droplet IP (`home.yourdomain.com` → droplet).

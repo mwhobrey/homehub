@@ -1,8 +1,15 @@
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
 from datetime import datetime, date, timedelta
-from ..models import db, HomeStatus, MemberStatus, Notice, Reminder, RecurringReminder, Chore
+from ..models import db, HomeStatus, MemberStatus, Notice, Reminder, RecurringReminder, Chore, LinkedCalendar
 from ..blueprints import main_bp
-from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
+from ..user_context import (
+    resolve_actor,
+    resolve_user,
+    can_modify_record,
+    can_modify_reminder,
+    is_admin_for,
+    current_firebase_uid,
+)
 from ..security import sanitize_html, sanitize_text
 import json
 
@@ -99,6 +106,20 @@ def index():
             )
         except Exception:
             home_chores = []
+    try:
+        from ..google_calendar.acl import google_calendar_enabled, get_connection_for_uid
+        from ..google_calendar.sync import sync_connection_for_uid
+        if google_calendar_enabled():
+            uid = current_firebase_uid()
+            if uid and get_connection_for_uid(uid):
+                import threading
+                app_obj = current_app._get_current_object()
+                def _bg_sync(u=uid, app=app_obj):
+                    with app.app_context():
+                        sync_connection_for_uid(u)
+                threading.Thread(target=_bg_sync, daemon=True).start()
+    except Exception:
+        pass
     # Pass Python object; template will use |tojson safely
     return render_template(
         'index.html',
@@ -114,8 +135,29 @@ def index():
     )
 
 
-def _serialize_reminder(r: Reminder):
+def _calendar_meta(r: Reminder) -> dict:
+    lc_id = getattr(r, 'linked_calendar_id', None)
+    if not lc_id:
+        return {}
+    lc = LinkedCalendar.query.get(lc_id)
+    if not lc:
+        return {'linked_calendar_id': lc_id}
     return {
+        'linked_calendar_id': lc_id,
+        'calendar_summary': lc.summary,
+        'calendar_color': lc.background_color,
+    }
+
+
+def _reminder_visible(r: Reminder, visible_ids: set[int]) -> bool:
+    if getattr(r, 'source', None) == 'google' or getattr(r, 'linked_calendar_id', None):
+        lid = getattr(r, 'linked_calendar_id', None)
+        return lid in visible_ids if lid else False
+    return True
+
+
+def _serialize_reminder(r: Reminder):
+    data = {
         'id': r.id,
         'date': r.date.strftime('%Y-%m-%d') if r.date else None,
         'time': getattr(r, 'time', None) or None,
@@ -127,7 +169,16 @@ def _serialize_reminder(r: Reminder):
         'recurring_id': getattr(r, 'recurring_id', None),
         'timestamp': r.timestamp.isoformat() if r.timestamp else None,
         'updated_at': getattr(r, 'updated_at', None).isoformat() if getattr(r, 'updated_at', None) else None,
+        'source': getattr(r, 'source', None) or 'local',
+        'sync_status': getattr(r, 'sync_status', None) or 'synced',
+        'all_day': bool(getattr(r, 'all_day', False)),
     }
+    data.update(_calendar_meta(r))
+    try:
+        data['can_edit'] = can_modify_reminder(r)
+    except Exception:
+        data['can_edit'] = can_modify_record(r.creator or '')
+    return data
 
 def _serialize_recurring_rule(rr: RecurringReminder):
     interval = getattr(rr, 'interval', None) or 1
@@ -153,6 +204,8 @@ def _serialize_recurring_rule(rr: RecurringReminder):
 
 @main_bp.route('/api/reminders')
 def api_reminders_list():
+    from ..google_calendar.acl import visible_linked_calendar_ids
+    visible_ids = set(visible_linked_calendar_ids())
     scope = (request.args.get('scope', 'day') or 'day').lower()
     base_date = _parse_date_param(request.args.get('date'), date.today())
     q = Reminder.query
@@ -180,6 +233,7 @@ def api_reminders_list():
         ).all()
     except Exception:
         rows = q.order_by(Reminder.date.asc(), Reminder.id.asc()).all()
+    rows = [r for r in rows if _reminder_visible(r, visible_ids)]
     # Generate from recurring rules within scope window (without altering past)
     try:
         rules = RecurringReminder.query.all()
@@ -360,8 +414,22 @@ def api_recurring_rules_update_delete(rid):
     return jsonify({'ok': True, 'rule': _serialize_recurring_rule(rr)})
 
 
+def _parse_time_field(time_raw):
+    tval = None
+    if isinstance(time_raw, str) and len(time_raw) == 5 and time_raw[2] == ':':
+        hh, mm = time_raw.split(':', 1)
+        if hh.isdigit() and mm.isdigit():
+            hhi, mmi = int(hh), int(mm)
+            if 0 <= hhi < 24 and 0 <= mmi < 60:
+                tval = f"{hhi:02d}:{mmi:02d}"
+    return tval
+
+
 @main_bp.route('/api/reminders', methods=['POST'])
 def api_reminders_create():
+    from ..google_calendar.acl import google_calendar_enabled, resolve_writable_calendar
+    from ..google_calendar.writes import push_reminder_create
+
     payload = request.get_json(silent=True) or {}
     title = sanitize_text(payload.get('title', ''))
     creator = resolve_actor(json_payload=payload)
@@ -371,14 +439,7 @@ def api_reminders_create():
     d = _parse_date_param(payload.get('date'), None)
     if not d:
         return jsonify({'ok': False, 'error': 'Invalid date'}), 400
-    time_raw = payload.get('time')
-    tval = None
-    if isinstance(time_raw, str) and len(time_raw) == 5 and time_raw[2] == ':':
-        hh, mm = time_raw.split(':', 1)
-        if hh.isdigit() and mm.isdigit():
-            hhi, mmi = int(hh), int(mm)
-            if 0 <= hhi < 24 and 0 <= mmi < 60:
-                tval = f"{hhi:02d}:{mmi:02d}"
+    tval = _parse_time_field(payload.get('time'))
     # Recurring support (optional)
     recur = payload.get('recurring')
     if recur and isinstance(recur, dict):
@@ -410,17 +471,37 @@ def api_reminders_create():
         r.category = sanitize_text(cat) if cat else None
     if hasattr(r, 'color'):
         r.color = sanitize_text(col) if col else None
+    lc = None
+    if google_calendar_enabled():
+        lc_id = payload.get('linked_calendar_id')
+        try:
+            lc_id = int(lc_id) if lc_id is not None else None
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
+        lc = resolve_writable_calendar(lc_id)
+        if lc_id is not None and not lc:
+            return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
+        if lc:
+            r.source = 'google'
+            r.linked_calendar_id = lc.id
+            r.owner_uid = current_firebase_uid()
+            r.all_day = not tval
     db.session.add(r)
     db.session.commit()
+    if lc:
+        push_reminder_create(r, lc)
     return jsonify({'ok': True, 'reminder': _serialize_reminder(r)})
 
 
 @main_bp.route('/api/reminders/<int:rid>', methods=['PATCH'])
 def api_reminders_update(rid):
+    from ..google_calendar.acl import google_calendar_enabled, resolve_writable_calendar
+    from ..google_calendar.writes import push_reminder_move, push_reminder_update
+
     r = Reminder.query.get_or_404(rid)
     payload = request.get_json(silent=True) or {}
     user = resolve_user(json_payload=payload, json_key='creator')
-    if not can_modify_record(r.creator, user):
+    if not can_modify_reminder(r):
         return jsonify({'ok': False, 'error': 'Not allowed'}), 403
     if 'title' in payload:
         title = sanitize_text(payload['title'])
@@ -444,8 +525,58 @@ def api_reminders_update(rid):
         r.category = sanitize_text(payload.get('category')) if payload.get('category') else None
     if hasattr(r, 'color') and 'color' in payload:
         r.color = sanitize_text(payload.get('color')) if payload.get('color') else None
+    new_lc = None
+    if google_calendar_enabled() and 'linked_calendar_id' in payload:
+        try:
+            new_lc_id = int(payload.get('linked_calendar_id')) if payload.get('linked_calendar_id') is not None else None
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
+        new_lc = resolve_writable_calendar(new_lc_id) if new_lc_id else None
+        if new_lc_id is not None and not new_lc:
+            return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
     db.session.commit()
+    if google_calendar_enabled():
+        if new_lc and r.linked_calendar_id and new_lc.id != r.linked_calendar_id:
+            old_lc = LinkedCalendar.query.get(r.linked_calendar_id)
+            if old_lc and r.google_event_id:
+                push_reminder_move(r, old_lc, new_lc)
+            else:
+                r.linked_calendar_id = new_lc.id
+                push_reminder_create(r, new_lc) if not r.google_event_id else push_reminder_update(r, new_lc)
+        elif new_lc and not r.linked_calendar_id:
+            r.linked_calendar_id = new_lc.id
+            r.source = 'google'
+            r.owner_uid = current_firebase_uid()
+            push_reminder_create(r, new_lc)
+        elif r.linked_calendar_id and (r.source == 'google' or r.google_event_id):
+            lc = LinkedCalendar.query.get(r.linked_calendar_id)
+            if lc:
+                push_reminder_update(r, lc)
     return jsonify({'ok': True, 'reminder': _serialize_reminder(r)})
+
+
+@main_bp.route('/api/reminders/<int:rid>/resolve-conflict', methods=['PATCH'])
+def api_reminders_resolve_conflict(rid):
+    from ..google_calendar.writes import push_reminder_update
+
+    r = Reminder.query.get_or_404(rid)
+    if not can_modify_reminder(r):
+        return jsonify({'ok': False, 'error': 'Not allowed'}), 403
+    payload = request.get_json(silent=True) or {}
+    choice = (payload.get('resolution') or '').lower()
+    if choice == 'google':
+        r.sync_status = 'synced'
+        db.session.commit()
+        return jsonify({'ok': True, 'reminder': _serialize_reminder(r)})
+    if choice == 'local':
+        r.sync_status = 'synced'
+        db.session.commit()
+        if r.linked_calendar_id:
+            lc = LinkedCalendar.query.get(r.linked_calendar_id)
+            if lc:
+                push_reminder_update(r, lc)
+        return jsonify({'ok': True, 'reminder': _serialize_reminder(r)})
+    return jsonify({'ok': False, 'error': 'resolution required (google|local)'}), 400
 
 
 @main_bp.route('/api/reminders', methods=['DELETE'])
@@ -463,9 +594,14 @@ def api_reminders_delete_bulk():
         r = Reminder.query.get(rid)
         if not r:
             continue
-        if can_modify_record(r.creator, user):
+        if can_modify_reminder(r):
             if r.date:
                 dates.add(r.date.strftime('%Y-%m-%d'))
+            if r.linked_calendar_id and r.google_event_id:
+                from ..google_calendar.writes import push_reminder_delete
+                lc = LinkedCalendar.query.get(r.linked_calendar_id)
+                if lc:
+                    push_reminder_delete(r, lc)
             db.session.delete(r)
             deleted += 1
     if deleted:

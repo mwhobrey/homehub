@@ -1,0 +1,37 @@
+# HomeHub — Agent instructions
+
+## Runbook (required)
+
+Before planning or editing code, consult `.cursor/runbook/`. Load **only** the files relevant to the task:
+
+| Task type | Read |
+|-----------|------|
+| Any unfamiliar work | `00_INDEX.md` |
+| Stack, auth, data flow, APIs, deploy topology | `01_ARCHITECTURE.md` |
+| Where code lives, routes, models, config keys | `02_COMPONENTS_AND_FILES.md` |
+| Conventions, tests, CI, gotchas | `03_RULES_AND_STANDARDS.md` |
+| What's done / next priorities | `04_CURRENT_STATE.md` |
+
+Do **not** paste the entire runbook into context. Follow links from `00_INDEX.md` like a table of contents.
+
+If runbook guidance conflicts with the repo, **trust the code** and update the runbook in the same change set.
+
+## Runbook maintenance (before commit)
+
+When the user asks for a commit (or you are about to commit), update the runbook **first** if your change affects:
+
+- Architecture, auth, deployment, or external integrations → `01_ARCHITECTURE.md`
+- New/moved modules, routes, config keys, or directory layout → `02_COMPONENTS_AND_FILES.md`
+- Conventions, CI, testing, or new gotchas → `03_RULES_AND_STANDARDS.md`
+- Feature completeness, known breakage, or roadmap → `04_CURRENT_STATE.md`
+- Project purpose or runbook structure → `00_INDEX.md`
+
+Keep edits **minimal and factual** (bullet deltas, not essays). If nothing material changed, skip runbook edits.
+
+## Implementation defaults (from runbook)
+
+- App factory: `app.create_app()`; routes on `main_bp` in `app/blueprints/`.
+- Config: `config.yml` at repo root; feature flags under `feature_toggles`.
+- Writes: `resolve_actor()` / `can_modify_record()`; sanitize via `app/security.py`.
+- Do not use `app/routes.py` for new routes.
+- Build CSS when touching styles: `npm run build:css`.

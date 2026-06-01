@@ -78,6 +78,17 @@ def apply_config_defaults(config: dict) -> dict:
     qr.setdefault('history_retention_days', 7)
     qr.setdefault('encrypt_payloads', True)
     qr.setdefault('admin_only_wifi', False)
+    gcal = config.setdefault('google_calendar', {})
+    gcal.setdefault('enabled', False)
+    gcal.setdefault('client_id', os.environ.get('GOOGLE_CALENDAR_CLIENT_ID', ''))
+    secret = gcal.get('client_secret') or os.environ.get('GOOGLE_CALENDAR_CLIENT_SECRET', '')
+    gcal['client_secret'] = secret
+    gcal.setdefault('sync_interval_minutes', 15)
+    gcal.setdefault('default_timezone', 'America/Chicago')
+    gcal.setdefault('onboarding_all_calendars_enabled', True)
+    legal = config.setdefault('legal', {})
+    legal.setdefault('contact_email', '')
+    legal.setdefault('policy_updated', '2026-06-01')
     return config
 
 

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy — {{ config.instance_name or 'HomeHub' }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto card p-8 prose prose-sm dark:prose-invert">
+  <h1 class="text-2xl font-bold mb-2">Privacy Policy</h1>
+  <p class="text-sm text-gray-500 mb-6">Last updated: {{ policy_updated or '2026-06-01' }}</p>
+
+  <p>
+    This Privacy Policy describes how <strong>{{ config.instance_name or 'HomeHub' }}</strong>
+    (“the Service”) handles information when you use our family dashboard.
+    The Service is operated by the household that runs this server (“we”, “us”, “operator”).
+    This is a <strong>self-hosted</strong> application—not a commercial SaaS product.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Who operates the Service</h2>
+  <p>
+    Data is stored on infrastructure controlled by the operator of this HomeHub instance
+    (your family’s server or hosting provider). Contact the operator of this site for questions:
+    <strong>{{ operator_contact or 'the household administrator' }}</strong>.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Information we collect</h2>
+  <ul class="list-disc pl-5 space-y-2">
+    <li><strong>Account sign-in (Firebase / Google):</strong> When authentication is enabled, we receive your Google account identifier, email address, and display name to verify you are on the family allow list and to attribute content you create.</li>
+    <li><strong>Calendar data (optional):</strong> If you connect Google Calendar, we store OAuth tokens (encrypted) and calendar event data (titles, dates, times, descriptions) in our local database so the family calendar can display and sync events.</li>
+    <li><strong>Content you add:</strong> Reminders, notes, shopping lists, and other features store the text and metadata you submit on this server.</li>
+    <li><strong>Technical logs:</strong> The server may log IP addresses, request paths, and errors for security and troubleshooting.</li>
+  </ul>
+
+  <h2 class="text-lg font-semibold mt-6">How we use information</h2>
+  <ul class="list-disc pl-5 space-y-2">
+    <li>Authenticate family members and enforce access controls.</li>
+    <li>Display and synchronize shared calendar and household information among authorized users.</li>
+    <li>Operate, secure, and maintain the Service.</li>
+  </ul>
+  <p>We do not sell your personal information.</p>
+
+  <h2 class="text-lg font-semibold mt-6">Third-party services</h2>
+  <ul class="list-disc pl-5 space-y-2">
+    <li><strong>Google / Firebase:</strong> Used for sign-in and (if enabled) Google Calendar API access. Google’s policies apply to their processing: <a href="https://policies.google.com/privacy" class="text-blue-600 hover:underline" rel="noopener">Google Privacy Policy</a>.</li>
+    <li><strong>Weather (optional):</strong> If enabled, the browser may request forecast data from Open-Meteo; see their terms at <a href="https://open-meteo.com/en/terms" class="text-blue-600 hover:underline" rel="noopener">open-meteo.com</a>.</li>
+  </ul>
+
+  <h2 class="text-lg font-semibold mt-6">Storage and security</h2>
+  <p>
+    Data is stored in a SQLite database and local files on the operator’s server.
+    Google Calendar refresh tokens are encrypted at rest using the server’s secret key.
+    Access is restricted to users on the configured allow list (and calendar sharing rules you configure).
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Retention and deletion</h2>
+  <p>
+    Data is kept until the operator deletes it or removes your account from the allow list.
+    You may ask the operator to delete your connected calendar data or disconnect Google Calendar
+    from the dashboard settings. Disconnecting removes stored OAuth tokens; optional cleanup of
+    imported events is controlled by the operator.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Children</h2>
+  <p>
+    The Service is intended for use by members of a single household under the operator’s control.
+    Parents or guardians decide which family accounts are permitted and which calendars are shared.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Changes</h2>
+  <p>
+    The operator may update this policy by editing the deployed template. The “Last updated” date
+    above should be revised when material changes are made.
+  </p>
+
+  <p class="mt-8 text-sm text-gray-500">
+    <a href="{{ url_for('main.index') }}" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    · <a href="{{ url_for('main.terms') }}" class="text-blue-600 hover:underline">Terms of use</a>
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Terms of Use — {{ config.instance_name or 'HomeHub' }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto card p-8 prose prose-sm dark:prose-invert">
+  <h1 class="text-2xl font-bold mb-2">Terms of Use</h1>
+  <p class="text-sm text-gray-500 mb-6">Last updated: {{ policy_updated or '2026-06-01' }}</p>
+
+  <p>
+    By using <strong>{{ config.instance_name or 'HomeHub' }}</strong> (“the Service”), you agree to these terms.
+    The Service is a self-hosted family dashboard operated by the household that runs this server (“operator”).
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Eligibility</h2>
+  <p>
+    Use is limited to people invited by the operator (typically an email allow list).
+    You must use the Service in good faith for household coordination only.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Your responsibilities</h2>
+  <ul class="list-disc pl-5 space-y-2">
+    <li>Keep your Google account credentials secure.</li>
+    <li>Do not attempt to access data you are not permitted to see.</li>
+    <li>Do not use the Service for unlawful purposes or to harass others.</li>
+    <li>Content you add (events, notes, etc.) is visible to others according to sharing settings the operator and you configure.</li>
+  </ul>
+
+  <h2 class="text-lg font-semibold mt-6">Google Calendar</h2>
+  <p>
+    If you connect Google Calendar, you authorize the Service to read and write calendar events
+    on your behalf for sync with HomeHub. You can disconnect at any time from the dashboard.
+    Google’s terms apply to your use of Google services.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Disclaimer</h2>
+  <p>
+    The Service is provided “as is” without warranties. The operator is not liable for data loss,
+    sync errors, or outages except where required by applicable law. Maintain your own backups of
+    important data.
+  </p>
+
+  <h2 class="text-lg font-semibold mt-6">Changes</h2>
+  <p>
+    The operator may change these terms by updating this page. Continued use after changes constitutes acceptance.
+  </p>
+
+  <p class="mt-8 text-sm text-gray-500">
+    <a href="{{ url_for('main.index') }}" class="text-blue-600 hover:underline">← Back to dashboard</a>
+    · <a href="{{ url_for('main.privacy') }}" class="text-blue-600 hover:underline">Privacy policy</a>
+  </p>
+</div>
+{% endblock %}
