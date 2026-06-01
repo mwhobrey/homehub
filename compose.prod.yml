@@ -32,6 +32,8 @@ services:
       FIREBASE_CREDENTIALS_SRC: /app/credentials/firebase-service-account.json
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
       SESSION_DAYS: ${SESSION_DAYS:-14}
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
     networks:
       - homehub_internal
       - proxy

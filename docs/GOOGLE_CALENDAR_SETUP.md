@@ -187,9 +187,10 @@ Use `http://localhost:5000` and the localhost redirect URI in GCP.
 ### Docker / production
 
 1. Rebuild the image or reinstall Python deps (new packages: `google-api-python-client`, `google-auth-oauthlib`, `google-auth`).
-2. Restart the stack (`compose.prod.yml` or your usual command).
-3. Confirm Firebase **Authorized domains** includes your public hostname.
-4. Verify `/privacy` loads over HTTPS before finishing OAuth consent screen setup.
+2. Set `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET` in `.env`    (see `.env.example`). Compose passes them into the container — a secret only in host `.env` without that wiring will fail at OAuth callback with `client_secret is missing`.
+3. Restart the stack with recreate so env is picked up: `docker compose -f compose.prod.yml up -d --force-recreate`
+4. Confirm Firebase **Authorized domains** includes your public hostname.
+5. Verify `/privacy` loads over HTTPS before finishing OAuth consent screen setup.
 
 ---
 
@@ -285,6 +286,7 @@ Run as Parent A, Parent B, and Teen (if applicable):
 
 | Symptom | Likely cause | Fix |
 |---------|----------------|-----|
+| `client_secret is missing` on OAuth callback | Secret not in container env or `config.yml` | Set `GOOGLE_CALENDAR_CLIENT_SECRET` in `.env` **and** pass it in `compose.prod.yml` `environment:` (or put `client_secret` in `config.yml`); recreate container |
 | `redirect_uri_mismatch` | GCP redirect URI ≠ actual callback URL | Fix URI in Credentials; include exact path `/auth/google/calendar/callback` |
 | `access_denied` / app blocked | User not on OAuth **test users** list | Add Gmail in consent screen, or publish app |
 | `google_calendar_disabled` API | `enabled: false` or not Firebase mode | Check `config.yml` |
