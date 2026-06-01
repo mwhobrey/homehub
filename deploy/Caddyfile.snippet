@@ -1,0 +1,29 @@
+# Paste into your EXISTING Caddy config (do not run a second Caddy on 80/443).
+#
+# Pick the reverse_proxy line that matches how your Caddy runs:
+
+home.yourdomain.com {
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# A) Caddy on the host (systemd) — HomeHub bound to 127.0.0.1:5000
+	reverse_proxy 127.0.0.1:5000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	# B) Caddy in Docker — HomeHub on host port (uncomment ONE of these):
+	# reverse_proxy host.docker.internal:5000 { ... same headers ... }
+	# reverse_proxy 172.17.0.1:5000 { ... }   # Linux default docker bridge
+
+	# C) Caddy + HomeHub on same Docker network (container name homehub):
+	# reverse_proxy homehub:5000 { ... same headers ... }
+}

@@ -1,22 +1,32 @@
-# Production: HomeHub only (no Caddy — use your existing reverse proxy).
-#
-# HomeHub listens on 127.0.0.1:5000 by default so only the host (or containers
-# with host access) can reach it. Point your existing Caddy at that address.
-#
-# Usage:
-#   cp .env.example .env
-#   cp config-example.yml config.yml
-#   docker compose -f compose.prod.yml up -d --build
-#
-# Caddy config: see deploy/Caddyfile.snippet and docs/DEPLOY.md
+# Standalone stack WITH bundled Caddy — only if ports 80/443 are free.
+# docker compose -f compose.prod.with-caddy.yml up -d --build
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: homehub-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - homehub_internal
+    depends_on:
+      - homehub
+
   homehub:
     container_name: homehub
     build: .
     restart: unless-stopped
-    ports:
-      - "${HOMEHUB_BIND:-127.0.0.1:5000}:5000"
+    expose:
+      - "5000"
     volumes:
       - ./uploads:/app/uploads
       - ./media:/app/media
@@ -39,3 +49,7 @@ networks:
   homehub_internal:
     name: homehub_internal
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

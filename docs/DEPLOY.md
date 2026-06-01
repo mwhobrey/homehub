@@ -12,7 +12,9 @@ Internet → :443 Caddy (TLS) → homehub:5000 (Docker internal network)
          Flask session (signed cookie) + server-side display name
 ```
 
-HomeHub is **not** published on host port 5000 in production. Only Caddy exposes 80/443.
+By default, HomeHub binds to **`127.0.0.1:5000`** only. Your **existing** Caddy (or other proxy) terminates TLS on 80/443 and forwards to that address.
+
+If this server has **no** reverse proxy yet, use `compose.prod.with-caddy.yml` (see below).
 
 ## 1. Firebase project
 
@@ -92,20 +94,46 @@ family_members:
 
 Only emails in `allowed_emails` can sign in. `admin_emails` can edit expenses settings, site notice, etc.
 
-## 4. Start production stack
+## 4. Start HomeHub (existing Caddy on 80/443)
+
+If you already run Caddy (or another proxy), **do not** start a second one — that causes `port is already allocated`.
 
 ```bash
+# Stop/remove the failed stack if you tried the old all-in-one compose
+docker compose -f compose.prod.yml down 2>/dev/null || true
+docker rm -f homehub-caddy 2>/dev/null || true
+
 docker compose -f compose.prod.yml up -d --build
-```
-
-Check logs:
-
-```bash
-docker compose -f compose.prod.yml logs -f caddy
 docker compose -f compose.prod.yml logs -f homehub
 ```
 
+HomeHub is on **`127.0.0.1:5000`** (override with `HOMEHUB_BIND` in `.env`).
+
+### Wire your existing Caddy
+
+Copy the site block from `deploy/Caddyfile.snippet` into your Caddy config, then reload Caddy:
+
+```bash
+# Examples — use whatever you normally do:
+caddy reload --config /path/to/Caddyfile
+# or: docker exec <your-caddy-container> caddy reload --config /etc/caddy/Caddyfile
+```
+
+| Your Caddy runs… | `reverse_proxy` target |
+|------------------|------------------------|
+| On the host (systemd) | `127.0.0.1:5000` |
+| In Docker | `host.docker.internal:5000` or `172.17.0.1:5000` |
+| Same Docker network as HomeHub | `homehub:5000` (connect Caddy to network `homehub_internal`: `docker network connect homehub_internal <caddy-container>`) |
+
 Visit `https://your-domain` → **Continue with Google**.
+
+### No existing Caddy?
+
+```bash
+docker compose -f compose.prod.with-caddy.yml up -d --build
+```
+
+Uses `deploy/Caddyfile` and requires free ports 80/443.
 
 ## 5. Media downloader & QR / WiFi hardening
 
