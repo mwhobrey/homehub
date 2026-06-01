@@ -1,10 +1,21 @@
 import os, re, shutil, subprocess
 from threading import Thread
-from flask import render_template, request, redirect, url_for, send_from_directory, jsonify, current_app, flash
+from flask import render_template, request, redirect, url_for, send_from_directory, jsonify, current_app, flash, abort
 from datetime import datetime
 from ..models import db, Media, PDF
 from ..blueprints import main_bp
-from ..security import sanitize_text, is_url_safe_for_fetch
+from ..extensions import limiter
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin
+from ..security import sanitize_text, safe_basename_filename
+from ..media_guard import (
+    build_ytdlp_command,
+    count_pending_media,
+    is_media_url_allowed,
+    media_settings,
+    safe_media_filename,
+    validate_media_format,
+    validate_media_quality,
+)
 from werkzeug.utils import secure_filename
 
 
@@ -14,40 +25,57 @@ PDF_FOLDER = os.path.join(BASE_DIR, 'pdfs')
 
 
 @main_bp.route('/media', methods=['GET', 'POST'])
+@limiter.limit('8 per hour', methods=['POST'])
 def media():
     if request.method == 'POST':
-        url = sanitize_text(request.form['url'])
-        creator = sanitize_text(request.form['creator'])
-        if not is_url_safe_for_fetch(url):
-            flash('Invalid or disallowed URL. Only external http(s) URLs are allowed.', 'error')
+        settings = media_settings()
+        if settings['admin_only'] and not is_admin():
+            flash('Only admins can queue media downloads.', 'error')
             return redirect(url_for('main.media'))
-        fmt = sanitize_text(request.form.get('format', 'mp4'))
-        quality = sanitize_text(request.form.get('quality', 'best'))
-        base = f"media_{int(datetime.utcnow().timestamp())}"
+
+        url = sanitize_text(request.form['url'])
+        creator = resolve_actor()
+        if not is_media_url_allowed(url):
+            flash(
+                'URL not allowed. Use a supported public video host (see config hardening.media_downloader.allowed_domains).',
+                'error',
+            )
+            return redirect(url_for('main.media'))
+
+        pending = count_pending_media(creator)
+        if pending >= settings['max_concurrent_per_user']:
+            flash(
+                f'You already have {pending} download(s) in progress. Wait for them to finish before starting another.',
+                'error',
+            )
+            return redirect(url_for('main.media'))
+
+        fmt = validate_media_format(sanitize_text(request.form.get('format', 'mp4')))
+        quality = validate_media_quality(sanitize_text(request.form.get('quality', 'best')), fmt)
+        base = f"media_{int(datetime.utcnow().timestamp())}_{os.getpid()}"
         output_tmpl = os.path.join(MEDIA_FOLDER, base + ".%(ext)s")
         media_obj = Media(title=url, url=url, creator=creator, filepath='', status='pending')
         db.session.add(media_obj)
         db.session.commit()
         flash('Download queued. You can switch tabs; refresh to check status.', 'info')
-        cmd = ["yt-dlp", "-o", output_tmpl]
-        if fmt == 'mp3':
-            cmd += ["-x", "--audio-format", "mp3"]
-        else:
-            selected = quality or 'best'
-            if selected == 'best':
-                fmt_string = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
-            else:
-                fmt_string = f"{selected}/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
-            cmd += ["-f", fmt_string, "--merge-output-format", "mp4"]
-        cmd += [url]
+        cmd = build_ytdlp_command(url, output_tmpl, fmt, quality)
+        timeout_sec = max(60, settings['download_timeout_minutes'] * 60)
 
         app_obj = current_app._get_current_object()
 
-        def worker(app, mid: int, base_prefix: str, command: list):
+        def worker(app, mid: int, base_prefix: str, command: list, timeout: int):
             with app.app_context():
                 m = Media.query.get(mid)
+                proc = None
                 try:
-                    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    proc = subprocess.Popen(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        start_new_session=True,
+                    )
                     last_percent = -1
                     for line in proc.stdout:
                         try:
@@ -63,7 +91,7 @@ def media():
                                     last_percent = p
                         except Exception:
                             pass
-                    ret = proc.wait()
+                    ret = proc.wait(timeout=timeout)
                     if ret != 0:
                         raise RuntimeError(f"yt-dlp exited with {ret}")
                     saved = None
@@ -73,13 +101,22 @@ def media():
                             break
                     m.filepath = saved or ''
                     m.status = 'done'
+                except subprocess.TimeoutExpired:
+                    if proc is not None:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                    m.status = 'error'
+                    m.progress = 'Timed out'
                 except Exception:
                     m.status = 'error'
                 finally:
-                    m.progress = None
+                    if m.progress != 'Timed out':
+                        m.progress = None
                     db.session.commit()
 
-        Thread(target=worker, args=(app_obj, media_obj.id, base, cmd), daemon=True).start()
+        Thread(target=worker, args=(app_obj, media_obj.id, base, cmd, timeout_sec), daemon=True).start()
         return redirect(url_for('main.media'))
     media_list = Media.query.order_by(Media.download_time.desc()).all()
     config = current_app.config['HOMEHUB_CONFIG']
@@ -94,15 +131,20 @@ def media_status(media_id):
 
 @main_bp.route('/media/<filename>')
 def serve_media(filename):
-    return send_from_directory(MEDIA_FOLDER, filename, as_attachment=True)
+    safe = safe_media_filename(filename)
+    if not safe:
+        abort(404)
+    return send_from_directory(MEDIA_FOLDER, safe, as_attachment=True)
 
 
 @main_bp.route('/media/preview/<filename>')
 def preview_media(filename):
     """Serve media file for preview (inline) with security headers"""
-    # Add security headers to prevent script execution
+    safe = safe_media_filename(filename)
+    if not safe:
+        abort(404)
     from flask import make_response
-    response = make_response(send_from_directory(MEDIA_FOLDER, filename, as_attachment=False))
+    response = make_response(send_from_directory(MEDIA_FOLDER, safe, as_attachment=False))
     response.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'"
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -112,10 +154,8 @@ def preview_media(filename):
 @main_bp.route('/media/delete/<int:media_id>', methods=['POST'])
 def delete_media(media_id):
     m = Media.query.get_or_404(media_id)
-    user = sanitize_text(request.form['user'])
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == m.creator:
+    user = resolve_user()
+    if can_modify_record(m.creator, user):
         try:
             if m.filepath:
                 base = m.filepath.rsplit('.', 1)[0]
@@ -133,7 +173,7 @@ def delete_media(media_id):
 def pdfs():
     if request.method == 'POST':
         pdf_file = request.files['pdf']
-        creator = sanitize_text(request.form['creator'])
+        creator = resolve_actor()
         filename = pdf_file.filename
         if not filename:
             return redirect(url_for('main.pdfs'))
@@ -170,14 +210,20 @@ def pdfs():
 
 @main_bp.route('/pdfs/<filename>')
 def serve_pdf(filename):
-    return send_from_directory(PDF_FOLDER, filename, as_attachment=True)
+    safe = safe_basename_filename(filename)
+    if not safe:
+        abort(404)
+    return send_from_directory(PDF_FOLDER, safe, as_attachment=True)
 
 
 @main_bp.route('/pdfs/preview/<filename>')
 def preview_pdf(filename):
     """Serve PDF file for preview (inline) with security headers"""
+    safe = safe_basename_filename(filename)
+    if not safe:
+        abort(404)
     from flask import make_response
-    response = make_response(send_from_directory(PDF_FOLDER, filename, as_attachment=False))
+    response = make_response(send_from_directory(PDF_FOLDER, safe, as_attachment=False))
     response.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'"
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -187,10 +233,8 @@ def preview_pdf(filename):
 @main_bp.route('/pdfs/delete/<int:pdf_id>', methods=['POST'])
 def delete_pdf(pdf_id):
     p = PDF.query.get_or_404(pdf_id)
-    user = sanitize_text(request.form['user'])
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == p.creator:
+    user = resolve_user()
+    if can_modify_record(p.creator, user):
         try:
             if p.compressed_path:
                 os.remove(os.path.join(PDF_FOLDER, p.compressed_path))

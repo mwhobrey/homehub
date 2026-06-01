@@ -2,6 +2,7 @@ from flask import render_template, request, redirect, url_for, current_app, json
 from datetime import datetime, timedelta
 from ..models import db, ShoppingItem, GroceryHistory
 from ..blueprints import main_bp
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_text
 import json
 
@@ -10,7 +11,7 @@ import json
 def shopping():
     if request.method == 'POST':
         item = sanitize_text(request.form['item'])
-        creator = sanitize_text(request.form['creator'])
+        creator = resolve_actor()
         raw_tags = request.form.get('tags', '').strip()
         tags_list = []
         if raw_tags:
@@ -72,10 +73,8 @@ def check_shopping(item_id):
 @main_bp.route('/shopping/delete/<int:item_id>', methods=['POST'])
 def delete_shopping(item_id):
     item = ShoppingItem.query.get_or_404(item_id)
-    user = sanitize_text(request.form['user'])
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == item.creator:
+    user = resolve_user()
+    if can_modify_record(item.creator, user):
         db.session.delete(item)
         db.session.commit()
     return redirect(url_for('main.shopping'))
@@ -86,10 +85,8 @@ def update_shopping_tags(item_id):
     item = ShoppingItem.query.get_or_404(item_id)
     try:
         data = request.get_json(force=True) or {}
-        user = sanitize_text(str(data.get('user', '')))
-        admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-        admin_aliases = {admin_name, 'Administrator', 'admin'}
-        if not (user in admin_aliases or user == (item.creator or '')):
+        user = resolve_user(json_payload=data, json_key='user')
+        if not can_modify_record(item.creator, user):
             return jsonify({"ok": False, "error": "not allowed"}), 403
         tags = data.get('tags', [])
         if not isinstance(tags, list):
@@ -137,10 +134,8 @@ def api_update_shopping(item_id):
     item = ShoppingItem.query.get_or_404(item_id)
     try:
         data = request.get_json(force=True) or {}
-        user = sanitize_text(str(data.get('user', '')))
-        admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-        admin_aliases = {admin_name, 'Administrator', 'admin'}
-        if not (user in admin_aliases or user == (item.creator or '')):
+        user = resolve_user(json_payload=data, json_key='user')
+        if not can_modify_record(item.creator, user):
             return jsonify({"ok": False, "error": "not allowed"}), 403
         new_item = data.get('item')
         raw_tags = data.get('tags', [])

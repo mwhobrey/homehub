@@ -5,12 +5,9 @@ import hashlib
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 CONFIG_PATH = os.path.join(BASE_DIR, 'config.yml')
 
-def load_config():
-    if not os.path.exists(CONFIG_PATH):
-        raise FileNotFoundError(f'config.yml not found at {CONFIG_PATH}.')
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f) or {}
-    # Hash password if present
+def apply_config_defaults(config: dict) -> dict:
+    """Fill missing keys so templates and routes always have expected structure."""
+    config = dict(config or {})
     if 'password' in config and config['password']:
         config['password_hash'] = hashlib.sha256(config['password'].encode()).hexdigest()
         del config['password']
@@ -27,10 +24,21 @@ def load_config():
     # Do not overwrite existing user value
     if 'calendar_start_day' not in rem or rem.get('calendar_start_day') in (None, ''):
         rem.setdefault('calendar_start_day', 'sunday')  # default Sunday to align with expense tracker
-    # Admin name default
+    # Admin name default (legacy auth)
     config.setdefault('admin_name', 'Administrator')
-    # Family members default list
+    # Family members default list (legacy UI picker)
     config.setdefault('family_members', [])
+    # Auth block: mode legacy | firebase
+    auth = config.setdefault('auth', {})
+    auth.setdefault('mode', 'legacy')
+    fb = auth.setdefault('firebase', {})
+    fb.setdefault('api_key', '')
+    fb.setdefault('auth_domain', '')
+    fb.setdefault('project_id', '')
+    fb.setdefault('app_id', '')
+    auth.setdefault('allowed_emails', [])
+    auth.setdefault('admin_emails', [])
+    auth.setdefault('display_names', {})  # email -> friendly name for creator fields
     # Theme defaults
     theme = config.setdefault('theme', {})
     theme.setdefault('primary_color', '#1d4ed8')
@@ -51,4 +59,31 @@ def load_config():
     weather.setdefault('timezone', '')
     weather.setdefault('units', 'metric')
     weather.setdefault('view', 'compact')
+    theme.setdefault('sidebar_active_color', theme.get('sidebar_active_color', '#3b82f6'))
+    # Feature hardening (public-internet defaults lean secure)
+    hard = config.setdefault('hardening', {})
+    media = hard.setdefault('media_downloader', {})
+    media.setdefault('allowed_domains', [
+        'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+        'youtu.be', 'vimeo.com', 'www.vimeo.com',
+    ])
+    media.setdefault('max_filesize_mb', 500)
+    media.setdefault('max_concurrent_per_user', 2)
+    media.setdefault('download_timeout_minutes', 45)
+    media.setdefault('admin_only', False)
+    media.setdefault('rate_limit', '8 per hour')
+    qr = hard.setdefault('qr_generator', {})
+    qr.setdefault('max_payload_length', 2048)
+    qr.setdefault('store_wifi_history', False)
+    qr.setdefault('history_retention_days', 7)
+    qr.setdefault('encrypt_payloads', True)
+    qr.setdefault('admin_only_wifi', False)
     return config
+
+
+def load_config():
+    if not os.path.exists(CONFIG_PATH):
+        raise FileNotFoundError(f'config.yml not found at {CONFIG_PATH}.')
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f) or {}
+    return apply_config_defaults(config)

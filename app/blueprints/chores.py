@@ -2,6 +2,7 @@ from flask import render_template, request, redirect, url_for, current_app, json
 from datetime import datetime, date, timedelta
 from ..models import db, Chore, RecurringChore
 from ..blueprints import main_bp
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_text
 import json
 
@@ -119,13 +120,8 @@ def _ensure_current_recurring_chores(today: date | None = None):
         db.session.commit()
 
 
-def _admin_aliases() -> set[str]:
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    return {admin_name, 'Administrator', 'admin'}
-
-
 def _request_user() -> str:
-    return sanitize_text(request.form.get('user', ''))
+    return resolve_user()
 
 
 def _ensure_app_setting_table():
@@ -189,9 +185,8 @@ def chores():
         chore_id = request.form.get('chore_id')
         recurring_rule_id = request.form.get('recurring_rule_id')
         description = sanitize_text(request.form['description'])
-        creator = sanitize_text(request.form['creator'])
+        creator = resolve_actor()
         user = _request_user()
-        admin_aliases = _admin_aliases()
         raw_tags = request.form.get('tags', '').strip()
         tags_list = []
         if raw_tags:
@@ -241,7 +236,7 @@ def chores():
                 )
             if recurring_rule_id:
                 rule = RecurringChore.query.get_or_404(int(recurring_rule_id))
-                if not (user in admin_aliases or user == (rule.creator or '')):
+                if not can_modify_record(rule.creator, user):
                     flash('Not allowed to update recurring rule.', 'error')
                     return redirect(url_for('main.chores'))
                 rule.description = description
@@ -289,7 +284,7 @@ def chores():
         else:
             if recurring_rule_id:
                 rule = RecurringChore.query.get_or_404(int(recurring_rule_id))
-                if not (user in admin_aliases or user == (rule.creator or '')):
+                if not can_modify_record(rule.creator, user):
                     flash('Not allowed to delete recurring rule.', 'error')
                     return redirect(url_for('main.chores'))
                 Chore.query.filter_by(recurring_id=rule.id).delete()
@@ -297,7 +292,7 @@ def chores():
                 db.session.commit()
             if chore_id:
                 chore = Chore.query.get_or_404(int(chore_id))
-                if not (user in admin_aliases or user == (chore.creator or '')):
+                if not can_modify_record(chore.creator, user):
                     flash('Not allowed to update chore.', 'error')
                     return redirect(url_for('main.chores'))
                 chore.description = description
@@ -316,15 +311,6 @@ def chores():
 @main_bp.route('/chores/edit/<int:chore_id>')
 def edit_chore(chore_id):
     chore = Chore.query.get_or_404(chore_id)
-    user = request.args.get('user')
-    if not user:
-        user = request.args.get('creator')
-    user = sanitize_text(user or '')
-    admin_aliases = _admin_aliases()
-    creator = (chore.creator or '')
-    if not (user in admin_aliases or user == creator):
-        flash('Not allowed to edit chore.', 'error')
-        return redirect(url_for('main.chores'))
     form_state = {
         'form_description': chore.description,
         'form_tags': chore.tags or '[]',
@@ -354,7 +340,8 @@ def edit_chore(chore_id):
 
 @main_bp.route('/chores/settings', methods=['POST'])
 def chores_settings():
-    if current_app.config['HOMEHUB_CONFIG'].get('password_hash') and not session.get('authed'):
+    from ..user_context import is_admin
+    if not is_admin():
         flash('Only admin can update chore settings.', 'error')
         return redirect(url_for('main.chores'))
     enabled = request.form.get('show_chores_on_homepage') in ('1', 'on', 'true', 'yes')
@@ -367,8 +354,7 @@ def chores_settings():
 def delete_recurring_chore(rule_id):
     rule = RecurringChore.query.get_or_404(rule_id)
     user = _request_user()
-    admin_aliases = _admin_aliases()
-    if not (user in admin_aliases or user == (rule.creator or '')):
+    if not can_modify_record(rule.creator, user):
         flash('Not allowed to delete recurring rule.', 'error')
         return redirect(url_for('main.chores'))
     Chore.query.filter_by(recurring_id=rule.id).delete()
@@ -402,13 +388,11 @@ def toggle_chore(chore_id):
 @main_bp.route('/chores/delete/<int:chore_id>', methods=['POST'])
 def delete_chore(chore_id):
     chore = Chore.query.get_or_404(chore_id)
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
+    user = resolve_user()
     if getattr(chore, 'recurring_id', None):
         rule = RecurringChore.query.get(getattr(chore, 'recurring_id', None))
         rule_creator = (rule.creator if rule else chore.creator) or ''
-        if user in admin_aliases or user == rule_creator:
+        if can_modify_record(rule_creator, user):
             if rule:
                 Chore.query.filter_by(recurring_id=rule.id).delete()
                 db.session.delete(rule)
@@ -419,7 +403,7 @@ def delete_chore(chore_id):
         else:
             flash('Not allowed to delete recurring rule.', 'error')
         return redirect(url_for('main.chores'))
-    if user in admin_aliases or user == chore.creator:
+    if can_modify_record(chore.creator, user):
         db.session.delete(chore)
         db.session.commit()
         flash('Chore deleted.', 'success')
@@ -433,9 +417,8 @@ def update_chore_tags(chore_id):
     chore = Chore.query.get_or_404(chore_id)
     try:
         data = request.get_json(force=True) or {}
-        user = sanitize_text(str(data.get('user', '')))
-        admin_aliases = _admin_aliases()
-        if not (user in admin_aliases or user == (chore.creator or '')):
+        user = resolve_user(json_payload=data, json_key='user')
+        if not can_modify_record(chore.creator, user):
             return jsonify({"ok": False, "error": "not allowed"}), 403
         tags = data.get('tags', [])
         if not isinstance(tags, list):
@@ -492,9 +475,8 @@ def api_update_chore(chore_id):
     chore = Chore.query.get_or_404(chore_id)
     try:
         data = request.get_json(force=True) or {}
-        user = sanitize_text(str(data.get('user', '')))
-        admin_aliases = _admin_aliases()
-        if not (user in admin_aliases or user == (chore.creator or '')):
+        user = resolve_user(json_payload=data, json_key='user')
+        if not can_modify_record(chore.creator, user):
             return jsonify({"ok": False, "error": "not allowed"}), 403
         desc = data.get('description')
         raw_tags = data.get('tags', [])

@@ -152,12 +152,16 @@
                         {% if not (hide_user_ui | default(false)) %}
                         <div class="ml-auto flex items-center gap-3 flex-wrap justify-end">
                             <div id="welcome" class="text-sm text-gray-600 truncate max-w-[50vw]"></div>
+                            {% if uses_firebase %}
+                            <span class="text-sm text-gray-700">{{ current_user_name }}</span>
+                            {% else %}
                             <div>
                                 <label class="text-sm text-gray-600 mr-2">User:</label>
                                 <select id="userSwitcher" class="border rounded p-1 text-sm"></select>
                             </div>
+                            {% endif %}
                             {% if is_authed %}
-                            <a href="/logout" class="px-2 py-1 rounded bg-gray-100 text-gray-800"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+                            <a href="/logout" id="logoutLink" class="px-2 py-1 rounded bg-gray-100 text-gray-800"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
                             {% endif %}
                         </div>
                         {% endif %}
@@ -236,8 +240,22 @@
                 modal.classList.remove('flex');
             };
         }
+        document.getElementById('logoutLink')?.addEventListener('click', function(e){
+            if (!{{ 'true' if uses_firebase else 'false' }}) return;
+            e.preventDefault();
+            fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                .finally(() => { window.location.href = '/login'; });
+        });
         // Ensure a username is stored in localStorage; initialize after DOM is ready
         document.addEventListener('DOMContentLoaded', function(){
+            {% if uses_firebase %}
+            const firebaseName = {{ current_user_name|tojson }};
+            if (firebaseName) {
+                try { localStorage.setItem('username', firebaseName); } catch(e) {}
+            }
+            renderWelcome();
+            applyUserContext();
+            {% else %}
             const switcher = document.getElementById('userSwitcher');
             if (switcher){
                 const familyEl = document.getElementById('familyData');
@@ -268,6 +286,7 @@
             }
             renderWelcome();
             applyUserContext();
+            {% endif %}
             // Sidebar toggles
             const sidebar = document.getElementById('sidebar');
             const COLLAPSE_KEY = 'ui:sidebarCollapsed';
@@ -306,7 +325,8 @@
         function applyUserContext(){
             const current = localStorage.getItem('username') || '';
             const adminName = '{{ config.admin_name }}';
-            const allowed = (creator) => (current === creator || current === adminName || current === 'Administrator' || current === 'admin');
+            const isAdminUser = {{ 'true' if current_user_is_admin else 'false' }} || [adminName,'Administrator','admin'].includes(current);
+            const allowed = (creator) => isAdminUser || (current === creator);
             // hidden inputs
             document.querySelectorAll('input[name="creator"]').forEach(function(i){ i.value = current; });
             document.querySelectorAll('input[name="user"]').forEach(function(i){ i.value = current; });

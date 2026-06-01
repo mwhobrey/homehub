@@ -101,9 +101,11 @@ class ShortURL(db.Model):
 
 class QRCode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    text = db.Column(db.Text, nullable=False)
+    text = db.Column(db.Text, nullable=False)  # encrypted payload when hardening enabled
     filename = db.Column(db.String(256), nullable=False)
-    original_input = db.Column(db.Text)  # what user typed (for history display)
+    original_input = db.Column(db.Text)  # masked shorthand for WiFi; safe display text otherwise
+    display_label = db.Column(db.String(256))  # UI-safe label (never includes WiFi password)
+    is_wifi = db.Column(db.Boolean, default=False)
     creator = db.Column(db.String(64))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 

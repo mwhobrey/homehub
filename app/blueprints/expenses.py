@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta
 import calendar as _calendar
 import json
 from ..models import db, RecurringExpense, ExpenseEntry
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_text
 from ..blueprints import main_bp
 import bleach
@@ -177,7 +178,7 @@ def expenses():
             category = bleach.clean(request.form.get('category',''))
             start_date = request.form.get('start_date')
             end_date = request.form.get('end_date')
-            creator = bleach.clean(request.form.get('creator',''))
+            creator = resolve_actor()
             sd = datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else date.today()
             ed = datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None
             db.session.add(RecurringExpense(title=title, unit_price=unit_price, default_quantity=default_quantity, frequency=frequency, monthly_mode=monthly_mode, category=category, start_date=sd, end_date=ed, creator=creator, effective_from=sd))
@@ -220,10 +221,8 @@ def expenses():
 @main_bp.route('/expenses/recurring/edit/<int:rid>', methods=['POST'])
 def edit_recurring_expense(rid):
     r = RecurringExpense.query.get_or_404(rid)
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (r.creator or '')):
+    user = resolve_user()
+    if not can_modify_record(r.creator or '', user):
         flash('Not allowed to edit rule.', 'error')
         return redirect(url_for('main.expenses'))
     # Update fields
@@ -277,10 +276,8 @@ def edit_recurring_expense(rid):
 @main_bp.route('/expenses/recurring/delete/<int:rid>', methods=['POST'])
 def delete_recurring_expense(rid):
     r = RecurringExpense.query.get_or_404(rid)
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (r.creator or '')):
+    user = resolve_user()
+    if not can_modify_record(r.creator or '', user):
         flash('Not allowed to delete rule.', 'error')
         return redirect(url_for('main.expenses'))
     delete_entries = request.form.get('delete_entries') in ('1', 'true', 'on', 'yes')
@@ -302,9 +299,8 @@ def delete_recurring_expense(rid):
 
 @main_bp.route('/expenses/settings', methods=['POST'])
 def expenses_settings():
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    if user != admin_name:
+    from ..user_context import is_admin
+    if not is_admin():
         flash('Only admin can update settings.', 'error')
         return redirect(url_for('main.expenses'))
     currency = sanitize_text(request.form.get('currency', ''))
@@ -332,10 +328,8 @@ def expenses_settings():
 @main_bp.route('/expenses/delete/<int:entry_id>', methods=['POST'])
 def delete_expense_entry(entry_id):
     entry = ExpenseEntry.query.get_or_404(entry_id)
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (entry.payer or '')):
+    user = resolve_user()
+    if not can_modify_record(entry.payer or '', user):
         flash('Not allowed to delete entry.', 'error')
         return redirect(url_for('main.expenses'))
     db.session.delete(entry)
@@ -352,10 +346,8 @@ def delete_expense_entry(entry_id):
 @main_bp.route('/expenses/edit/<int:entry_id>', methods=['POST'])
 def edit_expense_entry(entry_id):
     entry = ExpenseEntry.query.get_or_404(entry_id)
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (entry.payer or '')):
+    user = resolve_user()
+    if not can_modify_record(entry.payer or '', user):
         flash('Not allowed to edit entry.', 'error')
         return redirect(url_for('main.expenses'))
     # Update fields
@@ -385,9 +377,7 @@ def edit_expense_entry(entry_id):
 
 @main_bp.route('/expenses/bulk-delete', methods=['POST'])
 def bulk_delete_expenses():
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
+    user = resolve_user()
     ids = request.form.getlist('ids')
     if not ids:
         flash('No entries selected.', 'warning')
@@ -396,7 +386,7 @@ def bulk_delete_expenses():
     for entry_id in ids:
         try:
             entry = ExpenseEntry.query.get(int(entry_id))
-            if entry and (user in admin_aliases or user == (entry.payer or '')):
+            if entry and can_modify_record(entry.payer, user):
                 db.session.delete(entry)
                 deleted += 1
         except Exception:

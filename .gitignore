@@ -1,5 +1,6 @@
 # Database files
 data/app.db
+data/qr/
 database.db
 
 # User-uploaded files
@@ -19,6 +20,7 @@ htmlcov/
 # Environment variables
 .env
 config.yml
+secrets/
 
 # Node.js dependencies and build artifacts
 node_modules/

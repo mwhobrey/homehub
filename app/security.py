@@ -75,3 +75,27 @@ def sanitize_html(value: str) -> str:
 def sanitize_text(value: str) -> str:
     # Plain-text sanitize: strip tags and trim whitespace
     return bleach.clean(value or "", strip=True).strip()
+
+
+def safe_local_redirect_path(path: str | None) -> str | None:
+    """Allow only same-site relative redirects (blocks open redirects)."""
+    if not path:
+        return None
+    path = path.strip()
+    if not path.startswith('/') or path.startswith('//'):
+        return None
+    if '://' in path or '\\' in path:
+        return None
+    return path
+
+
+def safe_basename_filename(filename: str) -> str | None:
+    """Reject path traversal in user-supplied filenames."""
+    import os
+
+    if not filename:
+        return None
+    name = os.path.basename(filename)
+    if not name or name != filename or '..' in filename or name.startswith('.'):
+        return None
+    return name

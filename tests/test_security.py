@@ -92,7 +92,7 @@ def test_media_ssrf_block_localhost(client, monkeypatch):
     }, follow_redirects=True)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert 'Invalid or disallowed URL' in body
+    assert 'not allowed' in body.lower()
 
 
 def test_shortener_allows_only_http_https(client):

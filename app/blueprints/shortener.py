@@ -2,6 +2,8 @@ from flask import render_template, request, redirect, url_for, current_app, flas
 from ..models import db, ShortURL
 from ..utils import generate_short_code
 from ..blueprints import main_bp
+from ..extensions import limiter
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_text, is_http_url
 
 
@@ -9,7 +11,7 @@ from ..security import sanitize_text, is_http_url
 def shorten():
     if request.method == 'POST':
         original_url = sanitize_text(request.form['original_url'])
-        creator = sanitize_text(request.form['creator'])
+        creator = resolve_actor()
         if not is_http_url(original_url):
             flash('Please enter a valid http(s) URL.', 'error')
             return redirect(url_for('main.shorten'))
@@ -26,6 +28,7 @@ def shorten():
 
 
 @main_bp.route('/s/<short_code>')
+@limiter.limit('120 per minute')
 def redirect_short(short_code):
     short_url = ShortURL.query.filter_by(short_code=short_code).first_or_404()
     target = short_url.original_url or ''
@@ -39,9 +42,8 @@ def redirect_short(short_code):
 def delete_short(url_id):
     su = ShortURL.query.get_or_404(url_id)
     user = sanitize_text(request.form['user'])
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == su.creator:
+    user = resolve_user()
+    if can_modify_record(su.creator, user):
         db.session.delete(su)
         db.session.commit()
     return redirect(url_for('main.shorten'))

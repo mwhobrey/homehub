@@ -1,8 +1,11 @@
-from flask import Flask, session
+from flask import Flask, request, session
 from flask_sqlalchemy import SQLAlchemy
-from .config import load_config
+from werkzeug.middleware.proxy_fix import ProxyFix
+from .config import load_config, apply_config_defaults
+from .extensions import limiter
 import os
 import secrets
+from datetime import timedelta
 
 db = SQLAlchemy()
 
@@ -38,17 +41,47 @@ def create_app(test_config: dict | None = None):
         import secrets as _secrets
         secret = _secrets.token_hex(32)
     app.config['SECRET_KEY'] = secret
-    # Explicitly disable CSRF (forms are simple and app runs on home network)
     app.config['WTF_CSRF_ENABLED'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    behind_proxy = os.environ.get('TRUST_PROXY', '1') == '1'
+    app.config['SESSION_COOKIE_SECURE'] = (
+        os.environ.get('SESSION_COOKIE_SECURE', '1' if behind_proxy else '0') == '1'
+    )
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
+        days=int(os.environ.get('SESSION_DAYS', '14'))
+    )
+    max_mb = int(os.environ.get('MAX_UPLOAD_MB', '50'))
+    app.config['MAX_CONTENT_LENGTH'] = max_mb * 1024 * 1024
 
-    # Load config.yml
-    app.config['HOMEHUB_CONFIG'] = load_config()
-
-    # Allow tests to override configuration (database, testing flag, etc.)
+    # Allow tests to override configuration before loading config.yml
     if test_config:
         app.config.update(test_config)
 
+    if 'HOMEHUB_CONFIG' not in app.config:
+        app.config['HOMEHUB_CONFIG'] = load_config()
+    else:
+        app.config['HOMEHUB_CONFIG'] = apply_config_defaults(app.config['HOMEHUB_CONFIG'])
+
     db.init_app(app)
+    limiter.init_app(app)
+
+    if behind_proxy:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+    @app.after_request
+    def set_security_headers(response):
+        if request.endpoint and str(request.endpoint).startswith('static'):
+            return response
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        if app.config.get('SESSION_COOKIE_SECURE'):
+            response.headers.setdefault(
+                'Strict-Transport-Security',
+                'max-age=31536000; includeSubDomains',
+            )
+        return response
 
     # Ensure models are imported before creating tables
     with app.app_context():
@@ -115,6 +148,8 @@ def create_app(test_config: dict | None = None):
                 cur.execute("CREATE TABLE IF NOT EXISTS app_setting (key TEXT PRIMARY KEY, value TEXT)")
                 # New columns for QRCode and Reminder
                 ensure_column(_QRCode.__tablename__, 'original_input', 'TEXT', None)
+                ensure_column(_QRCode.__tablename__, 'display_label', 'TEXT', None)
+                ensure_column(_QRCode.__tablename__, 'is_wifi', 'INTEGER', 0)
                 ensure_column(_Reminder.__tablename__, 'recurring_id', 'INTEGER', None)
                 # Add 'tags' to recipe for multi-tag feature
                 if not has_column('recipe', 'tags'):
@@ -190,8 +225,14 @@ def create_app(test_config: dict | None = None):
 
     @app.context_processor
     def inject_auth_state():
+        from .user_context import current_display_name, is_logged_in, is_admin, uses_firebase
+
         return {
-            'is_authed': bool(session.get('authed'))
+            'is_authed': is_logged_in(),
+            'auth_mode': (app.config.get('HOMEHUB_CONFIG', {}).get('auth') or {}).get('mode', 'legacy'),
+            'uses_firebase': uses_firebase(),
+            'current_user_name': current_display_name(),
+            'current_user_is_admin': is_admin(),
         }
     
     # Add Jinja2 filter for JSON parsing

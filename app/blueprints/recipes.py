@@ -1,6 +1,7 @@
 from flask import render_template, request, redirect, url_for, current_app, flash, jsonify
 from ..models import db, Recipe
 from ..blueprints import main_bp
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_text, sanitize_html, is_http_url
 import json
 
@@ -18,7 +19,7 @@ def recipes():
             return render_template('recipes.html', recipes=recipes_list, config=config, form_title=title, form_link=link)
         ingredients = sanitize_html(request.form.get('ingredients', ''))
         instructions = sanitize_html(request.form.get('instructions', ''))
-        creator = sanitize_text(request.form['creator'])
+        creator = resolve_actor()
         
         # Handle tags (JSON array)
         raw_tags = request.form.get('tags', '').strip()
@@ -40,9 +41,8 @@ def recipes():
         
         if recipe_id:
             rec = Recipe.query.get_or_404(int(recipe_id))
-            admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-            admin_aliases = {admin_name, 'Administrator', 'admin'}
-            if creator in admin_aliases or creator == rec.creator:
+            creator = resolve_actor()
+            if can_modify_record(rec.creator, creator):
                 rec.title = title
                 rec.link = link
                 rec.ingredients = ingredients
@@ -96,10 +96,8 @@ def recipes():
 @main_bp.route('/recipes/edit/<int:recipe_id>')
 def edit_recipe(recipe_id):
     rec = Recipe.query.get_or_404(recipe_id)
-    user = sanitize_text(request.args.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (rec.creator or '')):
+    user = resolve_user()
+    if not can_modify_record(rec.creator, user):
         flash('Not allowed to edit recipe.', 'error')
         return redirect(url_for('main.recipes'))
     recipes_list = Recipe.query.order_by(Recipe.timestamp.desc()).all()
@@ -137,9 +135,8 @@ def edit_recipe(recipe_id):
 def delete_recipe(recipe_id):
     recipe = Recipe.query.get_or_404(recipe_id)
     user = sanitize_text(request.form['user'])
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == recipe.creator:
+    user = resolve_user()
+    if can_modify_record(recipe.creator, user):
         db.session.delete(recipe)
         db.session.commit()
         flash('Recipe deleted.', 'success')
@@ -153,9 +150,8 @@ def update_recipe_tags(recipe_id):
     try:
         data = request.get_json(force=True) or {}
         user = sanitize_text(str(data.get('user', '')))
-        admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-        admin_aliases = {admin_name, 'Administrator', 'admin'}
-        if not (user in admin_aliases or user == (recipe.creator or '')):
+        user = resolve_user()
+        if not can_modify_record(recipe.creator, user):
             return jsonify({"ok": False, "error": "not allowed"}), 403
         tags = data.get('tags', [])
         if not isinstance(tags, list):

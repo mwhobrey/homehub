@@ -2,6 +2,7 @@ from flask import render_template, request, redirect, url_for, flash, jsonify, c
 from datetime import datetime, date, timedelta
 from ..models import db, HomeStatus, MemberStatus, Notice, Reminder, RecurringReminder, Chore
 from ..blueprints import main_bp
+from ..user_context import resolve_actor, resolve_user, can_modify_record, is_admin_for
 from ..security import sanitize_html, sanitize_text
 import json
 
@@ -309,20 +310,16 @@ def api_recurring_rules_update_delete(rid):
     rr = RecurringReminder.query.get_or_404(rid)
     if request.method == 'DELETE':
         payload = request.get_json(silent=True) or {}
-        user = sanitize_text(payload.get('creator', ''))
-        admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-        admin_aliases = {admin_name, 'Administrator', 'admin'}
-        if not (user in admin_aliases or user == (rr.creator or '')):
+        user = resolve_user(json_payload=payload, json_key='creator')
+        if not can_modify_record(rr.creator or '', user):
             return jsonify({'ok': False, 'error': 'Not allowed'}), 403
         db.session.delete(rr)
         db.session.commit()
         return jsonify({'ok': True})
     # PATCH
     payload = request.get_json(silent=True) or {}
-    user = sanitize_text(payload.get('creator', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if not (user in admin_aliases or user == (rr.creator or '')):
+    user = resolve_user(json_payload=payload, json_key='creator')
+    if not can_modify_record(rr.creator or '', user):
         return jsonify({'ok': False, 'error': 'Not allowed'}), 403
     # Updatable fields
     if 'title' in payload: rr.title = sanitize_text(payload.get('title') or rr.title)
@@ -367,7 +364,7 @@ def api_recurring_rules_update_delete(rid):
 def api_reminders_create():
     payload = request.get_json(silent=True) or {}
     title = sanitize_text(payload.get('title', ''))
-    creator = sanitize_text(payload.get('creator', ''))
+    creator = resolve_actor(json_payload=payload)
     description = sanitize_html(payload.get('description', ''))
     if not title:
         return jsonify({'ok': False, 'error': 'Title required'}), 400
@@ -422,10 +419,8 @@ def api_reminders_create():
 def api_reminders_update(rid):
     r = Reminder.query.get_or_404(rid)
     payload = request.get_json(silent=True) or {}
-    user = sanitize_text(payload.get('creator', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user not in admin_aliases and user != (r.creator or ''):
+    user = resolve_user(json_payload=payload, json_key='creator')
+    if not can_modify_record(r.creator, user):
         return jsonify({'ok': False, 'error': 'Not allowed'}), 403
     if 'title' in payload:
         title = sanitize_text(payload['title'])
@@ -457,11 +452,9 @@ def api_reminders_update(rid):
 def api_reminders_delete_bulk():
     payload = request.get_json(silent=True) or {}
     ids = payload.get('ids') or []
-    user = sanitize_text(payload.get('creator', ''))
+    user = resolve_user(json_payload=payload, json_key='creator')
     if not isinstance(ids, list) or not ids:
         return jsonify({'ok': False, 'error': 'No ids provided'}), 400
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
     deleted = 0
     dates = set()
     for rid in ids:
@@ -470,7 +463,7 @@ def api_reminders_delete_bulk():
         r = Reminder.query.get(rid)
         if not r:
             continue
-        if user in admin_aliases or user == (r.creator or ''):
+        if can_modify_record(r.creator, user):
             if r.date:
                 dates.add(r.date.strftime('%Y-%m-%d'))
             db.session.delete(r)
@@ -485,7 +478,7 @@ def add_reminder():
     date_s = sanitize_text(request.form.get('date'))
     title = sanitize_text(request.form.get('title'))
     description = sanitize_html(request.form.get('description'))
-    creator = sanitize_text(request.form.get('creator'))
+    creator = resolve_actor()
     if not (date_s and title):
         flash('Date and title are required for reminders.', 'error')
         return redirect(url_for('main.index'))
@@ -504,10 +497,8 @@ def add_reminder():
 @main_bp.route('/calendar/delete/<int:reminder_id>', methods=['POST'])
 def delete_reminder(reminder_id):
     r = Reminder.query.get_or_404(reminder_id)
-    user = sanitize_text(request.form.get('user'))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
-    if user in admin_aliases or user == r.creator:
+    user = resolve_user()
+    if can_modify_record(r.creator, user):
         db.session.delete(r)
         db.session.commit()
         flash('Reminder deleted.', 'success')
@@ -525,7 +516,7 @@ def delete_reminder(reminder_id):
 @main_bp.route('/calendar/delete_bulk', methods=['POST'])
 def delete_reminders_bulk():
     ids_raw = sanitize_text(request.form.get('ids', ''))
-    user = sanitize_text(request.form.get('user', ''))
+    user = resolve_user()
     if not ids_raw:
         return redirect(url_for('main.index'))
     id_list = []
@@ -535,8 +526,6 @@ def delete_reminders_bulk():
             id_list.append(int(part))
     if not id_list:
         return redirect(url_for('main.index'))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    admin_aliases = {admin_name, 'Administrator', 'admin'}
     kept_date = None
     deleted = 0
     for rid in id_list:
@@ -548,7 +537,7 @@ def delete_reminders_bulk():
                 kept_date = r.date.strftime('%Y-%m-%d')
             except Exception:
                 kept_date = None
-        if user in admin_aliases or user == r.creator:
+        if can_modify_record(r.creator, user):
             db.session.delete(r)
             deleted += 1
     if deleted:
@@ -562,11 +551,11 @@ def delete_reminders_bulk():
 @main_bp.route('/notice', methods=['POST'])
 def update_notice():
     content = sanitize_html(request.form.get('content', ''))
-    user = sanitize_text(request.form.get('user', ''))
-    admin_name = current_app.config['HOMEHUB_CONFIG'].get('admin_name', 'Administrator')
-    if user != admin_name:
+    from ..user_context import is_admin, current_display_name
+    if not is_admin():
         flash('Only admin can update the notice.', 'error')
         return redirect(url_for('main.index'))
+    user = current_display_name()
     n = Notice.query.order_by(Notice.updated_at.desc()).first()
     now = datetime.utcnow()
     if n:

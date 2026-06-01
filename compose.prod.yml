@@ -1,0 +1,57 @@
+# Production stack: Caddy (TLS) + HomeHub (internal only).
+# Usage:
+#   cp .env.example .env   # fill DOMAIN, ACME_EMAIL, SECRET_KEY, Firebase paths
+#   cp config-example.yml config.yml   # set auth.mode: firebase and allow list
+#   docker compose -f compose.prod.yml up -d
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: homehub-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - homehub_edge
+    depends_on:
+      - homehub
+
+  homehub:
+    container_name: homehub
+    build: .
+    restart: unless-stopped
+    expose:
+      - "5000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./media:/app/media
+      - ./pdfs:/app/pdfs
+      - ./data:/app/data
+      - ./config.yml:/app/config.yml:ro
+      - ${FIREBASE_SERVICE_ACCOUNT_FILE:-./secrets/firebase-service-account.json}:/run/secrets/firebase-sa.json:ro
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY}
+      TRUST_PROXY: "1"
+      SESSION_COOKIE_SECURE: "1"
+      FIREBASE_SERVICE_ACCOUNT_FILE: /run/secrets/firebase-sa.json
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      SESSION_DAYS: ${SESSION_DAYS:-14}
+    networks:
+      - homehub_edge
+
+networks:
+  homehub_edge:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,5 +1,20 @@
 instance_name: "My Home Hub"
-password: "" #leave blank for password less access
+
+# --- Authentication ---
+# legacy: optional shared password (see password below)
+# firebase: Google sign-in via Firebase (recommended for public internet)
+auth:
+  mode: legacy  # or: firebase
+  firebase:
+    api_key: ""
+    auth_domain: ""
+    project_id: ""
+    app_id: ""
+  allowed_emails: []   # required for firebase, e.g. - family@gmail.com
+  admin_emails: []     # can change expense settings, site notice, etc.
+  display_names: {}    # email: "Display Name" used on created items
+
+password: "" # legacy only; leave blank for open LAN or set for shared password
 admin_name: "Administrator"
 feature_toggles:
   shopping_list: true
@@ -15,6 +30,27 @@ feature_toggles:
   expiry_tracker: true
   url_shortener: true
   expense_tracker: true
+
+# Hardening for public deployment (media + QR / WiFi)
+hardening:
+  media_downloader:
+    allowed_domains:
+      - youtube.com
+      - www.youtube.com
+      - youtu.be
+      - m.youtube.com
+      - vimeo.com
+    max_filesize_mb: 500
+    max_concurrent_per_user: 2
+    download_timeout_minutes: 45
+    rate_limit: "8 per hour"
+    admin_only: false
+  qr_generator:
+    max_payload_length: 2048
+    store_wifi_history: false   # WiFi QRs shown once; passwords not stored
+    history_retention_days: 7
+    encrypt_payloads: true
+    admin_only_wifi: false      # set true to restrict WiFi QRs to admin_emails
 
 family_members:
   - Mom
