@@ -130,6 +130,17 @@ def index():
                 threading.Thread(target=_bg_sync, daemon=True).start()
     except Exception:
         pass
+    school_summary = None
+    if (config.get('feature_toggles') or {}).get('school', True):
+        try:
+            from ..school_permissions import actor_name, visible_class_ids
+            from ..school_services import dashboard_summary as school_dashboard_summary
+            actor = actor_name()
+            if actor:
+                ids = visible_class_ids(actor)
+                school_summary = school_dashboard_summary(actor, ids)
+        except Exception:
+            school_summary = None
     # Pass Python object; template will use |tojson safely
     return render_template(
         'index.html',
@@ -142,6 +153,7 @@ def index():
         reminder_categories=reminder_categories,
         home_chores=home_chores,
         show_chores_on_homepage=show_chores_on_homepage,
+        school_summary=school_summary,
     )
 
 

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mx-auto max-w-6xl">
+    <div class="mb-4">
+        <a href="/school" class="text-sm text-blue-600 hover:underline">&larr; School</a>
+        <h2 class="text-2xl font-bold mt-1">{{ school_class.name }}</h2>
+        <p class="text-sm text-gray-600 dark:text-gray-400">{{ school_class.subject or '' }}{% if school_class.term %} · {{ school_class.term }}{% endif %} · Teacher: {{ school_class.teacher_id }}</p>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-6">
+        <a href="/school/class/{{ school_class.id }}/gradebook" class="btn btn-secondary">Gradebook</a>
+        <span id="analyticsBadge" class="text-sm text-gray-500 self-center">Loading analytics…</span>
+    </div>
+
+    {% if can_manage %}
+    <div class="card p-4 mb-6">
+        <h3 class="font-semibold mb-3">Enroll student</h3>
+        <form id="enrollStudentForm" data-class-id="{{ school_class.id }}" class="flex flex-wrap gap-2">
+            <select name="student_id" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+                {% for m in family_members %}
+                <option value="{{ m }}">{{ m }}</option>
+                {% endfor %}
+            </select>
+            <select name="role" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                <option value="student">Student</option>
+                <option value="assistant">Assistant</option>
+            </select>
+            <button type="submit" class="btn btn-primary">Enroll</button>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-6">
+        <h3 class="font-semibold mb-3">New assignment</h3>
+        <form id="createAssignmentForm" data-class-id="{{ school_class.id }}" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input type="text" name="title" placeholder="Title" class="p-2 border rounded md:col-span-2 dark:bg-gray-800 dark:border-gray-600" required>
+            <textarea name="instructions_html" placeholder="Instructions (HTML allowed)" class="p-2 border rounded md:col-span-2 dark:bg-gray-800 dark:border-gray-600" rows="3"></textarea>
+            <input type="datetime-local" name="due_at" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            <input type="number" name="points_possible" value="100" min="0" step="0.5" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            <select name="category_id" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                <option value="">No category</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.name }} ({{ cat.weight_percent }}%)</option>
+                {% endfor %}
+            </select>
+            <select name="status" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                <option value="assigned">Assign immediately</option>
+                <option value="draft">Save as draft</option>
+            </select>
+            <label class="inline-flex items-center gap-2 text-sm md:col-span-2">
+                <input type="checkbox" name="allow_late" checked> Allow late submissions
+            </label>
+            <div class="md:col-span-2"><button type="submit" class="btn btn-primary">Create assignment</button></div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-6">
+        <h3 class="font-semibold mb-3">Attendance</h3>
+        <form id="attendanceForm" data-class-id="{{ school_class.id }}">
+            <input type="date" name="date" value="{{ today if today is defined else '' }}" class="p-2 border rounded mb-3 dark:bg-gray-800 dark:border-gray-600" required>
+            {% for e in enrollments if e.role == 'student' %}
+            <div class="flex items-center gap-3 mb-2" data-student-id="{{ e.student_id }}">
+                <span class="w-32 text-sm">{{ e.student_id }}</span>
+                <select class="p-1 border rounded text-sm dark:bg-gray-800 dark:border-gray-600">
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="late">Late</option>
+                    <option value="excused">Excused</option>
+                </select>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-500">Enroll students to track attendance.</p>
+            {% endfor %}
+            {% if enrollments %}<button type="submit" class="btn btn-secondary mt-2">Save attendance</button>{% endif %}
+        </form>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2">
+            <h3 class="font-semibold mb-2">Assignments</h3>
+            <div class="space-y-2">
+                {% for a in assignments %}
+                <a href="/school/assignment/{{ a.id }}" class="card p-3 block hover:ring-2 hover:ring-blue-300">
+                    <div class="font-medium">{{ a.title }}</div>
+                    <div class="text-xs text-gray-500">
+                        Status: {{ a.status }}
+                        {% if a.due_at %} · Due {{ a.due_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+                        · {{ a.points_possible }} pts
+                    </div>
+                </a>
+                {% else %}
+                <p class="text-gray-500 text-sm">No assignments yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+        <div>
+            <h3 class="font-semibold mb-2">Roster</h3>
+            <ul class="text-sm space-y-2">
+                {% for e in enrollments %}
+                <li class="flex justify-between items-center card p-2">
+                    <span>{{ e.student_id }} <span class="text-gray-500">({{ e.role }})</span></span>
+                    {% if can_manage %}
+                    <button type="button" class="text-red-600 text-xs" data-unenroll="{{ e.id }}">Remove</button>
+                    {% endif %}
+                </li>
+                {% else %}
+                <li class="text-gray-500">No enrollments.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/school_api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/school_dashboard.js') }}"></script>
+<script>
+(function () {
+  const badge = document.getElementById('analyticsBadge');
+  if (!badge || !window.SchoolAPI) return;
+  SchoolAPI.analytics({{ school_class.id }}).then((d) => {
+    const a = d.analytics;
+    badge.textContent = `Submissions ${(a.submission_rate * 100).toFixed(0)}% · Missing ${a.missing_count} · Late ${a.late_count}`;
+  }).catch(() => { badge.textContent = ''; });
+})();
+</script>
+{% endblock %}

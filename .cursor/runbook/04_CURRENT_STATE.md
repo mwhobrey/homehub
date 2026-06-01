@@ -7,6 +7,7 @@
 ### Core product
 
 - All feature modules listed in README are implemented as Flask routes + templates (notes, upload, shopping, chores, recipes, expiry, expenses, media, PDFs, shortener, QR, dashboard).
+- **School module** (`/school`): classes, enrollments, assignments with deadlines, student submissions (file upload + external links), teacher grading/feedback, weighted gradebook, attendance, analytics; config under `school:` and toggle `feature_toggles.school`.
 - **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker.
 - **Feature toggles** in `config.yml` hide sidebar entries without removing routes entirely (routes still exist if URL known).
 - **SQLite persistence** with automatic table creation and incremental column migrations on startup.
@@ -23,7 +24,7 @@
 
 ### Quality
 
-- **`pytest tests/`:** 51 passed (calendar enterprise slice: RRULE, attendees, conflicts, multiday).
+- **`pytest tests/`:** includes `test_school.py` (permissions, submissions, gradebook, attendance).
 - **Docker publish workflow** builds CSS and multi-arch images on `v*` tags.
 
 ## What is incomplete, weak, or operational-only

@@ -33,6 +33,8 @@ homehub/
 | `extensions.py` | Flask-Limiter instance |
 | `security.py` | bleach sanitization, SSRF URL checks, safe redirect/filename helpers |
 | `user_context.py` | Auth mode, session identity, `resolve_actor`, `can_modify_record`, admin checks |
+| `school_permissions.py` | School RBAC: teacher/student/parent_observer, class-scoped access |
+| `school_services.py` | Gradebook, analytics, audit log, submission helpers |
 | `firebase_auth.py` | Firebase Admin init + `verify_id_token` |
 | `google_calendar/` | OAuth, Calendar API client, pull/push sync, ACL helpers |
 | `sensitive_store.py` | Fernet encrypt/decrypt (QR payloads, Google OAuth refresh tokens) |
@@ -56,6 +58,7 @@ All routes attach to **`main_bp`** (`blueprints/__init__.py`) — endpoint names
 | `uploads.py` | `/upload`, `/uploads/*` | Shared cloud |
 | `shopping.py` | `/shopping`, `/api/shopping*` | Shopping list + tags API |
 | `chores.py` | `/chores`, `/api/chores*` | Chores + recurring |
+| `school.py` | `/school`, `/api/school/*` | Homeschool: classes, assignments, submissions, gradebook, attendance |
 | `recipes.py` | `/recipes`, `/api/recipes*` | Recipe book |
 | `expiry.py` | `/expiry` | Expiry tracker |
 | `expenses.py` | `/expenses`, `/api/expenses/month` | Expense tracker |
@@ -90,6 +93,8 @@ Shared partial: `_flash.html`.
 | `js/weather.js` | Open-Meteo client |
 | `js/firebase-auth.js` | Google sign-in flow |
 | `js/tags.js`, `form_tags.js` | Tag UI for shopping/chores/recipes |
+| `js/school_api.js`, `school_dashboard.js`, `school_assignment.js` | School API client + page logic |
+| `js/school_api.js`, `school_dashboard.js`, `school_assignment.js` | School API client + page logic |
 | `icons/` | PWA icons, SVG logo |
 
 ## Data models (summary)
@@ -100,6 +105,7 @@ See `app/models.py` for full schema. Key entities:
 - **Files:** `File`, `Media`, `PDF`
 - **Household:** `HomeStatus`, `MemberStatus`, `Notice`
 - **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`
+- **School:** `SchoolClass`, `Enrollment`, `Assignment`, `AssignmentCategory`, `Submission`, `SubmissionArtifact`, `GradeEntry`, `AttendanceRecord`, `SchoolAuditLog`
 - **Money:** `RecurringExpense`, `ExpenseEntry`, `app_setting` (key/value, raw SQL)
 - **Utilities:** `ShortURL`, `QRCode`, `GroceryHistory`
 

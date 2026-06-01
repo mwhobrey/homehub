@@ -292,6 +292,7 @@ def create_app(test_config: dict | None = None):
     from .blueprints import weather  # noqa: F401
     from .blueprints import calendar_sync  # noqa: F401
     from .blueprints import calendar_page  # noqa: F401
+    from .blueprints import school  # noqa: F401
     app.register_blueprint(main_bp)
 
     if not app.config.get('TESTING'):

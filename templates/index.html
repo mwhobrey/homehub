@@ -130,6 +130,41 @@ window.REMINDERS_CAL_START = (function(){
 			{% endif %}
 		</div>
 
+		{% if config.feature_toggles.get('school', True) and school_summary %}
+		<div class="card p-4" id="homeSchoolCard">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="text-lg font-semibold flex items-center gap-2"><i class="fa-solid fa-graduation-cap text-indigo-600"></i> School</h3>
+				<a href="/school" class="text-sm text-blue-600 hover:underline">Open School</a>
+			</div>
+			<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+				<div>
+					<div class="font-medium text-amber-700">Due soon</div>
+					<ul class="mt-1 space-y-0.5">
+						{% for item in school_summary.due_soon[:3] %}
+						<li class="truncate"><a href="/school/assignment/{{ item.assignment_id }}" class="hover:underline">{{ item.title }}</a></li>
+						{% else %}<li class="text-gray-500">—</li>{% endfor %}
+					</ul>
+				</div>
+				<div>
+					<div class="font-medium text-red-700">Missing</div>
+					<ul class="mt-1 space-y-0.5">
+						{% for item in school_summary.missing[:3] %}
+						<li class="truncate"><a href="/school/assignment/{{ item.assignment_id }}" class="hover:underline">{{ item.title }}</a></li>
+						{% else %}<li class="text-gray-500">—</li>{% endfor %}
+					</ul>
+				</div>
+				<div>
+					<div class="font-medium text-green-700">Needs grading</div>
+					<ul class="mt-1 space-y-0.5">
+						{% for item in school_summary.needs_grading[:3] %}
+						<li class="truncate">{{ item.title }} <span class="text-gray-500">({{ item.student_id }})</span></li>
+						{% else %}<li class="text-gray-500">—</li>{% endfor %}
+					</ul>
+				</div>
+			</div>
+		</div>
+		{% endif %}
+
 		{% if show_chores_on_homepage and config.feature_toggles.get('chores', True) %}
 		<div class="card p-4" id="homeChoresCard">
 			<div class="flex items-center justify-between mb-3">

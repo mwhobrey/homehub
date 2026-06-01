@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mx-auto max-w-6xl">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+            <h2 class="text-2xl font-bold">School</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Role: <span class="font-medium">{{ school_role }}</span></p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div class="card p-4">
+            <h3 class="font-semibold mb-2"><i class="fa-solid fa-clock text-amber-500"></i> Due soon</h3>
+            <ul class="text-sm space-y-1">
+                {% for item in summary.due_soon %}
+                <li><a href="/school/assignment/{{ item.assignment_id }}" class="text-blue-600 hover:underline">{{ item.title }}</a> <span class="text-gray-500">({{ item.class }})</span></li>
+                {% else %}
+                <li class="text-gray-500">Nothing due in the next week.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card p-4">
+            <h3 class="font-semibold mb-2"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> Missing</h3>
+            <ul class="text-sm space-y-1">
+                {% for item in summary.missing %}
+                <li><a href="/school/assignment/{{ item.assignment_id }}" class="text-blue-600 hover:underline">{{ item.title }}</a> <span class="text-gray-500">({{ item.class }})</span></li>
+                {% else %}
+                <li class="text-gray-500">No missing work.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card p-4">
+            <h3 class="font-semibold mb-2"><i class="fa-solid fa-marker text-green-600"></i> Needs grading</h3>
+            <ul class="text-sm space-y-1">
+                {% for item in summary.needs_grading %}
+                <li><a href="/school/assignment/{{ item.assignment_id }}?student={{ item.student_id|urlencode }}" class="text-blue-600 hover:underline">{{ item.title }}</a> — {{ item.student_id }}</li>
+                {% else %}
+                <li class="text-gray-500">All caught up.</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    {% if is_school_admin or school_role == 'teacher' %}
+    <div class="card p-4 mb-6">
+        <h3 class="font-semibold mb-3">Create class</h3>
+        <form id="createClassForm" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input type="text" name="name" placeholder="Class name" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+            <input type="text" name="subject" placeholder="Subject" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            <input type="text" name="term" placeholder="Term (e.g. Fall 2026)" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            <select name="teacher_id" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                {% for m in family_members %}
+                <option value="{{ m }}">{{ m }}</option>
+                {% endfor %}
+            </select>
+            <div class="md:col-span-4">
+                <button type="submit" class="btn btn-primary">Add class</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <h3 class="text-lg font-semibold mb-3">Your classes</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for c in classes %}
+        <a href="/school/class/{{ c.id }}" class="card p-4 block hover:ring-2 hover:ring-blue-400 transition">
+            <div class="font-semibold text-lg">{{ c.name }}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">{{ c.subject or 'General' }}{% if c.term %} · {{ c.term }}{% endif %}</div>
+            <div class="text-xs mt-2">Teacher: {{ c.teacher_id }}</div>
+        </a>
+        {% else %}
+        <p class="text-gray-500">No classes yet.{% if is_school_admin or school_role == 'teacher' %} Create one above.{% endif %}</p>
+        {% endfor %}
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/school_api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/school_dashboard.js') }}"></script>
+{% endblock %}

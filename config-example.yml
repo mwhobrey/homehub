@@ -31,6 +31,14 @@ feature_toggles:
   url_shortener: true
   expense_tracker: true
   calendar: true
+  school: true
+
+# Homeschool / School module (roles by display name in legacy; Firebase uses display_names)
+school:
+  teachers: []          # e.g. - Mom
+  students: []          # e.g. - Alice
+  parent_observers: {}  # parent display name -> list of child display names
+  # Site admins (auth.admin_emails / admin_name) are always school_admin
 
 # Hardening for public deployment (media + QR / WiFi)
 hardening:

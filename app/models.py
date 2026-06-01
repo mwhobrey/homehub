@@ -262,3 +262,142 @@ class ExpenseEntry(db.Model):
     payer = db.Column(db.String(64))
     recurring_id = db.Column(db.Integer, db.ForeignKey('recurring_expense.id'))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# --- School module ---
+
+class SchoolClass(db.Model):
+    __tablename__ = 'school_class'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(128), nullable=False)
+    subject = db.Column(db.String(128))
+    term = db.Column(db.String(64))
+    teacher_id = db.Column(db.String(64), nullable=False)
+    schedule_json = db.Column(db.Text, default='{}')
+    archived = db.Column(db.Boolean, default=False)
+    creator = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    enrollments = db.relationship('Enrollment', backref='school_class', lazy=True, cascade='all, delete-orphan')
+    assignments = db.relationship('Assignment', backref='school_class', lazy=True, cascade='all, delete-orphan')
+    categories = db.relationship('AssignmentCategory', backref='school_class', lazy=True, cascade='all, delete-orphan')
+
+
+class Enrollment(db.Model):
+    __tablename__ = 'school_enrollment'
+    __table_args__ = (
+        db.UniqueConstraint('class_id', 'student_id', name='uq_enrollment_class_student'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('school_class.id'), nullable=False, index=True)
+    student_id = db.Column(db.String(64), nullable=False, index=True)
+    role = db.Column(db.String(16), default='student')  # student|teacher|assistant
+    active_from = db.Column(db.Date)
+    active_to = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AssignmentCategory(db.Model):
+    __tablename__ = 'school_assignment_category'
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('school_class.id'), nullable=True, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    weight_percent = db.Column(db.Float, default=0.0)
+    grading_policy = db.Column(db.String(32), default='points')  # points|pass_fail
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Assignment(db.Model):
+    __tablename__ = 'school_assignment'
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('school_class.id'), nullable=False, index=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('school_assignment_category.id'), nullable=True)
+    title = db.Column(db.String(256), nullable=False)
+    instructions_html = db.Column(db.Text, default='')
+    due_at = db.Column(db.DateTime)
+    assigned_at = db.Column(db.DateTime)
+    points_possible = db.Column(db.Float, default=100.0)
+    allow_late = db.Column(db.Boolean, default=True)
+    visibility = db.Column(db.String(16), default='assigned')  # draft|assigned|closed
+    status = db.Column(db.String(16), default='draft')  # draft|assigned|closed
+    creator = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    category = db.relationship('AssignmentCategory', backref='assignments')
+    submissions = db.relationship('Submission', backref='assignment', lazy=True, cascade='all, delete-orphan')
+
+
+class Submission(db.Model):
+    __tablename__ = 'school_submission'
+    __table_args__ = (
+        db.UniqueConstraint('assignment_id', 'student_id', 'attempt_number', name='uq_submission_attempt'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_id = db.Column(db.Integer, db.ForeignKey('school_assignment.id'), nullable=False, index=True)
+    student_id = db.Column(db.String(64), nullable=False, index=True)
+    status = db.Column(db.String(24), default='not_started')
+    submitted_at = db.Column(db.DateTime)
+    is_late = db.Column(db.Boolean, default=False)
+    attempt_number = db.Column(db.Integer, default=1)
+    student_note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    artifacts = db.relationship('SubmissionArtifact', backref='submission', lazy=True, cascade='all, delete-orphan')
+    grade = db.relationship('GradeEntry', backref='submission', uselist=False, cascade='all, delete-orphan')
+
+
+class SubmissionArtifact(db.Model):
+    __tablename__ = 'school_submission_artifact'
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('school_submission.id'), nullable=False, index=True)
+    artifact_type = db.Column(db.String(16), nullable=False)  # file|link|text
+    file_id = db.Column(db.Integer, db.ForeignKey('file.id'), nullable=True)
+    url = db.Column(db.String(1024))
+    note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    file = db.relationship('File', backref='submission_artifacts')
+
+
+class GradeEntry(db.Model):
+    __tablename__ = 'school_grade_entry'
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.Integer, db.ForeignKey('school_submission.id'), nullable=False, unique=True)
+    score = db.Column(db.Float)
+    rubric_json = db.Column(db.Text, default='{}')
+    feedback_html = db.Column(db.Text, default='')
+    graded_by = db.Column(db.String(64))
+    graded_at = db.Column(db.DateTime)
+    revision_requested = db.Column(db.Boolean, default=False)
+    completed = db.Column(db.Boolean, default=False)
+
+
+class AttendanceRecord(db.Model):
+    __tablename__ = 'school_attendance'
+    __table_args__ = (
+        db.UniqueConstraint('class_id', 'student_id', 'attendance_date', name='uq_attendance_day'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('school_class.id'), nullable=False, index=True)
+    student_id = db.Column(db.String(64), nullable=False, index=True)
+    attendance_date = db.Column(db.Date, nullable=False, index=True)
+    status = db.Column(db.String(16), default='present')  # present|absent|late|excused
+    note = db.Column(db.Text, default='')
+    marked_by = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SchoolAuditLog(db.Model):
+    __tablename__ = 'school_audit_log'
+    id = db.Column(db.Integer, primary_key=True)
+    actor = db.Column(db.String(64), nullable=False)
+    action = db.Column(db.String(64), nullable=False)
+    entity_type = db.Column(db.String(64), nullable=False)
+    entity_id = db.Column(db.Integer)
+    before_json = db.Column(db.Text)
+    after_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)

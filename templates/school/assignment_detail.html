@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mx-auto max-w-4xl" id="assignmentDetailRoot"
+     data-assignment-id="{{ assignment.id }}"
+     data-submission-id="{{ submission.id }}"
+     data-can-manage="{{ '1' if can_manage else '0' }}">
+    <a href="/school/class/{{ school_class.id }}" class="text-sm text-blue-600 hover:underline">&larr; {{ school_class.name }}</a>
+    <h2 class="text-2xl font-bold mt-2">{{ assignment.title }}</h2>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Due {% if assignment.due_at %}{{ assignment.due_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}
+        · {{ assignment.points_possible }} points · Status: {{ submission.status }}
+        {% if submission.is_late %}<span class="text-amber-600">Late</span>{% endif %}
+    </p>
+
+    {% if can_manage and students|length > 1 %}
+    <div class="mb-4">
+        <label class="text-sm">View student:</label>
+        <select id="viewStudentSelect" class="p-2 border rounded ml-2 dark:bg-gray-800 dark:border-gray-600">
+            {% for s in students %}
+            <option value="{{ s }}" {% if s == viewing_student %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+
+    <div class="card p-4 mb-4 prose dark:prose-invert max-w-none">
+        {{ assignment.instructions_html|safe }}
+    </div>
+
+    <div class="card p-4 mb-4">
+        <h3 class="font-semibold mb-2">{% if can_manage %}Submission — {{ viewing_student }}{% else %}Your submission{% endif %}</h3>
+        {% if not can_manage %}
+        <textarea id="studentNote" class="w-full p-2 border rounded mb-3 dark:bg-gray-800 dark:border-gray-600" rows="2" placeholder="Note to teacher">{{ submission.student_note or '' }}</textarea>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <form id="addLinkForm" class="space-y-2">
+                <label class="text-sm font-medium">Add link (Google Docs, Drive, etc.)</label>
+                <input type="url" name="url" placeholder="https://..." class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+                <input type="text" name="note" placeholder="Label (optional)" class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                <button type="submit" class="btn btn-secondary">Add link</button>
+            </form>
+            <div class="space-y-2">
+                <label class="text-sm font-medium">Upload file (photo, PDF, …)</label>
+                <input type="file" id="artifactFile" class="w-full text-sm">
+                <input type="text" id="fileNote" placeholder="Label (optional)" class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                <button type="button" id="uploadArtifactBtn" class="btn btn-secondary">Upload</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <h4 class="text-sm font-medium mb-2">Artifacts</h4>
+        <ul class="space-y-2 mb-4">
+            {% for art in artifacts %}
+            <li class="flex justify-between items-start text-sm border-b pb-2 dark:border-gray-700">
+                <span>
+                    {% if art.artifact_type == 'file' and art.file %}
+                    <a href="/uploads/{{ art.file.filename }}" class="text-blue-600 hover:underline" target="_blank" rel="noopener">{{ art.file.filename }}</a>
+                    {% elif art.artifact_type == 'link' %}
+                    <a href="{{ art.url }}" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">{{ art.url }}</a>
+                    {% else %}
+                    {{ art.note or 'Text note' }}
+                    {% endif %}
+                    {% if art.note and art.artifact_type != 'text' %} — {{ art.note }}{% endif %}
+                </span>
+                {% if not can_manage %}
+                <button type="button" class="text-red-600 text-xs" data-delete-artifact="{{ art.id }}">Remove</button>
+                {% endif %}
+            </li>
+            {% else %}
+            <li class="text-gray-500">No files or links yet.</li>
+            {% endfor %}
+        </ul>
+
+        {% if not can_manage %}
+        {% if submission.status not in ('submitted', 'graded', 'completed') or (submission.grade and submission.grade.revision_requested) %}
+        <button type="button" id="submitWorkBtn" class="btn btn-primary">Submit for grading</button>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    {% if can_manage %}
+    <div class="card p-4">
+        <h3 class="font-semibold mb-2">Teacher review — {{ viewing_student }}</h3>
+        <form id="gradeForm" class="grid grid-cols-1 gap-3">
+            <div class="flex gap-3 items-end">
+                <div>
+                    <label class="text-sm">Score / {{ assignment.points_possible }}</label>
+                    <input type="number" name="score" step="0.5" class="p-2 border rounded w-32 dark:bg-gray-800 dark:border-gray-600"
+                           value="{{ submission.grade.score if submission.grade and submission.grade.score is not none else '' }}">
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="revision_requested" {% if submission.grade and submission.grade.revision_requested %}checked{% endif %}> Request revision
+                </label>
+                <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="completed" {% if submission.grade and submission.grade.completed %}checked{% endif %}> Mark completed
+                </label>
+            </div>
+            <textarea name="feedback_html" rows="4" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600" placeholder="Feedback">{{ submission.grade.feedback_html if submission.grade else '' }}</textarea>
+            <button type="submit" class="btn btn-primary w-fit">Save grade</button>
+        </form>
+    </div>
+    {% elif submission.grade %}
+    <div class="card p-4">
+        <h3 class="font-semibold mb-2">Grade</h3>
+        <p>Score: {{ submission.grade.score }} / {{ assignment.points_possible }}</p>
+        <div class="prose dark:prose-invert mt-2">{{ submission.grade.feedback_html|safe }}</div>
+    </div>
+    {% endif %}
+</div>
+<script src="{{ url_for('static', filename='js/school_api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/school_assignment.js') }}"></script>
+{% endblock %}

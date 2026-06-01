@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mx-auto max-w-5xl">
+    <a href="/school/class/{{ school_class.id }}" class="text-sm text-blue-600 hover:underline">&larr; {{ school_class.name }}</a>
+    <h2 class="text-2xl font-bold mt-2 mb-4">Gradebook</h2>
+
+    {% if gradebook.categories %}
+    <p class="text-sm text-gray-600 mb-4">Categories:
+        {% for c in gradebook.categories %}{{ c.name }} ({{ c.weight_percent }}%){% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+
+    <div class="overflow-x-auto card">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b dark:border-gray-700">
+                    <th class="text-left p-3">Student</th>
+                    {% for c in gradebook.categories %}
+                    <th class="text-left p-3">{{ c.name }}</th>
+                    {% endfor %}
+                    <th class="text-left p-3">Overall %</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in gradebook.students %}
+                <tr class="border-b dark:border-gray-700">
+                    <td class="p-3 font-medium">{{ row.student_id }}</td>
+                    {% for c in gradebook.categories %}
+                    {% set bucket = row.categories.get(c.id|string, row.categories.get(c.id, {})) %}
+                    <td class="p-3">
+                        {% if bucket.scores %}
+                        {{ (bucket.scores|sum / bucket.scores|length)|round(1) }}%
+                        {% else %}—{% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="p-3 font-semibold">{{ row.overall_percent if row.overall_percent is not none else '—' }}{% if row.overall_percent is not none %}%{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="10" class="p-4 text-gray-500">No students enrolled.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
