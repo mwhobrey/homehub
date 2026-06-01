@@ -206,6 +206,24 @@ def create_app(test_config: dict | None = None):
                 # Best-effort; ignore if anything goes wrong
                 pass
 
+    if not app.config.get('TESTING'):
+        auth_cfg = (app.config.get('HOMEHUB_CONFIG') or {}).get('auth') or {}
+        if auth_cfg.get('mode') == 'firebase':
+            cred_path = os.environ.get('FIREBASE_SERVICE_ACCOUNT_FILE', '').strip()
+            if cred_path and os.path.isdir(cred_path):
+                app.logger.error(
+                    'Firebase service account mount is a directory at %s — '
+                    'the JSON file was likely missing on first docker compose up. '
+                    'Place secrets/firebase-service-account.json on the host (./secrets mount), then '
+                    'docker compose -f compose.prod.yml up -d --force-recreate',
+                    cred_path,
+                )
+            elif cred_path and not os.path.isfile(cred_path):
+                app.logger.error(
+                    'Firebase service account not found at %s (check volume mount)',
+                    cred_path,
+                )
+
     from .blueprints import main_bp
     # Register modular route modules to attach endpoints to main_bp
     from .blueprints import auth  # noqa: F401

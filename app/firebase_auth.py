@@ -23,9 +23,14 @@ def init_firebase() -> None:
     elif path and os.path.isfile(path):
         cred = credentials.Certificate(path)
     else:
+        hint = f'path={path!r}'
+        if path and os.path.isdir(path):
+            hint += ' (is a directory — host file was missing when container started; recreate container)'
+        elif path:
+            hint += ' (file not found inside container)'
         raise RuntimeError(
             'Firebase credentials missing. Set FIREBASE_SERVICE_ACCOUNT_FILE or '
-            'FIREBASE_SERVICE_ACCOUNT_JSON.'
+            f'FIREBASE_SERVICE_ACCOUNT_JSON. Checked {hint}'
         )
     firebase_admin.initialize_app(cred)
     _initialized = True

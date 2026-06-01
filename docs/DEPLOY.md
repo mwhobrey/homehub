@@ -58,7 +58,7 @@ Edit **`.env`**:
 | `DOMAIN` | `home.yourdomain.com` |
 | `ACME_EMAIL` | `you@gmail.com` |
 | `SECRET_KEY` | 64-char hex from `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `FIREBASE_SERVICE_ACCOUNT_FILE` | `./secrets/firebase-service-account.json` |
+| Firebase service account | `secrets/firebase-service-account.json` on host → `/run/secrets/` in container |
 
 Edit **`config.yml`** — set `auth.mode: firebase` and your family:
 
@@ -173,3 +173,35 @@ To restrict WiFi QR creation to admins: `admin_only_wifi: true`.
 | `not_allowed` after Google | Add that Gmail address to `allowed_emails`. |
 | `invalid_token` | Check service account JSON path and clock sync on server. |
 | Redirect loop | Ensure `TRUST_PROXY=1` and Caddy forwards `X-Forwarded-Proto`. |
+| `Firebase credentials missing` on sign-in | See below |
+
+### Firebase sign-in: credentials missing
+
+Inside the container the file must be **`/run/secrets/firebase-service-account.json`** (host: `secrets/firebase-service-account.json`).
+
+```bash
+# On the host — must be a real JSON file before compose up
+ls -la secrets/firebase-service-account.json
+file secrets/firebase-service-account.json
+
+# Inside the container
+docker exec homehub ls -la /run/secrets/
+docker exec homehub head -1 /run/secrets/firebase-service-account.json   # should show {
+
+docker exec homehub printenv FIREBASE_SERVICE_ACCOUNT_FILE
+# /run/secrets/firebase-service-account.json
+```
+
+**`head: I/O error`** on the old single-file mount (`firebase-sa.json`) means the bind mount is broken — usually the host file was missing on first `up`, or you replaced the JSON while the container was running. Fix:
+
+```bash
+cd ~/homehub
+git pull   # compose mounts ./secrets -> /run/secrets (directory mount)
+docker compose -f compose.prod.yml down
+ls -la secrets/firebase-service-account.json   # must be a file
+chmod 600 secrets/firebase-service-account.json
+docker compose -f compose.prod.yml up -d --force-recreate
+docker exec homehub head -1 /run/secrets/firebase-service-account.json
+```
+
+`root:root` with mode `600` is fine — the app runs as root in the image.
