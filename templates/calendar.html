@@ -125,8 +125,12 @@
                   <option value="year">year(s)</option>
                 </select>
               </div>
-              <div>
-                <label class="block text-xs mb-1">Repeat until (optional)</label>
+              <label class="inline-flex items-center gap-2 text-xs">
+                <input type="checkbox" name="rec_repeat_forever" class="rounded" checked>
+                Repeat forever
+              </label>
+              <div data-rec-end-wrap>
+                <label class="block text-xs mb-1">Repeat until</label>
                 <input name="rec_end_date" type="date" class="w-full h-8 border rounded px-2">
               </div>
             </div>

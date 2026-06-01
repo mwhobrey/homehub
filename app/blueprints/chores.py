@@ -207,7 +207,8 @@ def chores():
             if unit not in ('day', 'week', 'month', 'year'):
                 unit = 'day'
             start_date = _parse_date(request.form.get('rec_start_date')) or date.today()
-            end_date = _parse_date(request.form.get('rec_end_date'))
+            repeat_forever = request.form.get('rec_repeat_forever') in ('1', 'on', 'true', 'yes')
+            end_date = None if repeat_forever else _parse_date(request.form.get('rec_end_date'))
             if end_date and end_date < start_date:
                 flash('Recurring chore end date cannot be before the start date.', 'error')
                 return _render_chores_page(

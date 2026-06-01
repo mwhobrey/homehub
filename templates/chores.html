@@ -67,8 +67,14 @@
                         <label class="block text-xs text-gray-600 mb-1">Starting from</label>
                         <input type="date" name="rec_start_date" value="{{ form_rec_start_date.strftime('%Y-%m-%d') if form_rec_start_date is defined and form_rec_start_date else '' }}" class="w-full h-11 p-2 border border-gray-300 dark:border-gray-600 rounded">
                     </div>
-                    <div class="md:col-span-3">
-                        <label class="block text-xs text-gray-600 mb-1">Till</label>
+                    <div class="md:col-span-12">
+                        <label class="inline-flex items-center gap-2 text-sm">
+                            <input type="checkbox" name="rec_repeat_forever" class="rounded" id="recRepeatForeverChore" {% if form_rec_end_date is not defined or not form_rec_end_date %}checked{% endif %}>
+                            Repeat forever
+                        </label>
+                    </div>
+                    <div class="md:col-span-3" data-rec-end-wrap>
+                        <label class="block text-xs text-gray-600 mb-1">Repeat until</label>
                         <input type="date" name="rec_end_date" value="{{ form_rec_end_date.strftime('%Y-%m-%d') if form_rec_end_date is defined and form_rec_end_date else '' }}" class="w-full h-11 p-2 border border-gray-300 dark:border-gray-600 rounded">
                     </div>
                 </div>
@@ -145,10 +151,17 @@ document.querySelectorAll('input[name="user"]').forEach(i=> i.value = localStora
 (function(){
     const recurringToggle = document.getElementById('isRecurringChore');
     const recurringControls = document.getElementById('recurringChoreControls');
+    const choreForm = document.getElementById('choreForm');
     if (!recurringToggle || !recurringControls) return;
-    const sync = ()=> recurringControls.classList.toggle('hidden', !recurringToggle.checked);
+    const sync = ()=>{
+        recurringControls.classList.toggle('hidden', !recurringToggle.checked);
+        if (recurringToggle.checked && choreForm && window.homehubRecurrence) {
+            window.homehubRecurrence.bind(choreForm);
+        }
+    };
     recurringToggle.addEventListener('change', sync);
     sync();
+    if (choreForm && window.homehubRecurrence) window.homehubRecurrence.bind(choreForm);
 })();
 
 (function(){

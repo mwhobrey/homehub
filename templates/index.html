@@ -255,9 +255,13 @@ window.REMINDERS_CAL_START = (function(){
 								<option value="year">year</option>
 							</select>
 						</div>
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
-							<label class="text-xs text-gray-700 self-center">till</label>
-							<input name="rec_end_date" type="date" class="h-10 w-full border rounded p-2 text-sm" placeholder="End date (optional)" aria-label="End date (optional)">
+						<label class="inline-flex items-center gap-2 text-xs text-gray-700">
+							<input type="checkbox" name="rec_repeat_forever" class="rounded" checked>
+							Repeat forever
+						</label>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-end" data-rec-end-wrap>
+							<label class="text-xs text-gray-700 self-center">Repeat until</label>
+							<input name="rec_end_date" type="date" class="h-10 w-full border rounded p-2 text-sm" aria-label="Repeat until date">
 						</div>
 					</div>
 					<div>
@@ -477,12 +481,14 @@ window.REMINDERS_CAL_START = (function(){
 	function toggleRecurringFields(){
 		const on = !!(recChk && recChk.checked);
 		if(recControls){ recControls.classList.toggle('hidden', !on); }
-		['rec_interval','rec_unit','rec_end_date'].forEach(n=>{
+		['rec_interval','rec_unit','rec_end_date','rec_repeat_forever'].forEach(n=>{
 			const el = inlineForm ? inlineForm.querySelector(`[name=${n}]`) : null;
 			if(el){ el.disabled = !on; }
 		});
+		if(on && inlineForm && window.homehubRecurrence){ window.homehubRecurrence.bind(inlineForm); }
 	}
 	if(recChk){ recChk.addEventListener('change', toggleRecurringFields); toggleRecurringFields(); }
+	if(inlineForm && window.homehubRecurrence){ window.homehubRecurrence.bind(inlineForm); }
 
 	// Recalculate counts & category aggregates for a month key (YYYY-M), including recurring rule dates
 	function recalcMonth(key){
@@ -530,7 +536,9 @@ window.REMINDERS_CAL_START = (function(){
 			payload.recurring = {
 				interval,
 				unit,
-				end_date: data.rec_end_date || undefined
+				end_date: window.homehubRecurrence
+					? window.homehubRecurrence.endDateForPayload(inlineForm)
+					: (data.rec_end_date || null),
 			};
 		}
 		// If editing a recurring rule, call rule PATCH instead of reminder create/update
@@ -556,7 +564,14 @@ window.REMINDERS_CAL_START = (function(){
 			}
 			else {
 				// Regular rule update path
-				if(recChk && recChk.checked){ let interval=parseInt(data.rec_interval,10); if(!Number.isFinite(interval)||interval<1) interval=1; rulePayload.interval=interval; rulePayload.unit=(data.rec_unit||'day'); rulePayload.end_date=(data.rec_end_date||undefined); }
+				if(recChk && recChk.checked){
+					let interval=parseInt(data.rec_interval,10); if(!Number.isFinite(interval)||interval<1) interval=1;
+					rulePayload.interval=interval;
+					rulePayload.unit=(data.rec_unit||'day');
+					rulePayload.end_date=window.homehubRecurrence
+						? window.homehubRecurrence.endDateForPayload(inlineForm)
+						: (data.rec_end_date || null);
+				}
 				res = await window.remindersApi.updateRule(rid, rulePayload);
 			}
 			if(res && res.ok){
@@ -741,7 +756,7 @@ window.REMINDERS_CAL_START = (function(){
 	const rulesCats = (cache.recurring_rules||[]).map(rr=>rr.category).filter(Boolean);
 	if(activeCategory!=='ALL' && !baseItems.some(r=>r.category===activeCategory) && !rulesCats.includes(activeCategory)) activeCategory='ALL';
 
-	function formatRepeat(n, unit, endDate){ const label = (n||1)===1? unit : unit+'s'; return 'Repeats every '+(n||1)+' '+label+(endDate? (' till '+endDate):''); }
+	function formatRepeat(n, unit, endDate){ const label = (n||1)===1? unit : unit+'s'; return 'Repeats every '+(n||1)+' '+label+(endDate? (' until '+endDate):' forever'); }
 	function fmtTime(val){ if(!val) return ''; if(window.REMINDERS_TIME_FORMAT==='24h') return val; const [h,m]=val.split(':'); let hh=parseInt(h,10); const ap=hh>=12?'PM':'AM'; hh = (hh%12)||12; return hh+':'+m+' '+ap; }
 
 	// Build compressed list = recurring rules intersecting scope + singles
@@ -882,7 +897,11 @@ window.REMINDERS_CAL_START = (function(){
 				if(recChk){ recChk.checked = true; }
 				inlineForm.querySelector('[name=rec_interval]').value = rr.interval||1;
 				inlineForm.querySelector('[name=rec_unit]').value = rr.unit||'day';
-				if(rr.end_date) inlineForm.querySelector('[name=rec_end_date]').value = rr.end_date;
+				if(window.homehubRecurrence){
+					window.homehubRecurrence.applyRuleEndDate(inlineForm, rr.end_date || null);
+				} else if(rr.end_date){
+					inlineForm.querySelector('[name=rec_end_date]').value = rr.end_date;
+				}
 				// set date field to rule start_date so user can change anchor
 				inlineForm.querySelector('[name=date]').value = rr.start_date || getSelectedDate();
 				toggleRecurringFields();

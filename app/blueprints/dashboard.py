@@ -521,7 +521,8 @@ def api_recurring_rules_update_delete(rid):
         sd = _pd(payload.get('start_date'))
         if sd: rr.start_date = sd
     if 'end_date' in payload:
-        rr.end_date = _pd(payload.get('end_date'))
+        raw_end = payload.get('end_date')
+        rr.end_date = None if raw_end in (None, '') else _pd(raw_end)
     db.session.commit()
     if getattr(rr, 'linked_calendar_id', None) and getattr(rr, 'google_recurring_event_id', None):
         from ..google_calendar.writes import push_recurring_update

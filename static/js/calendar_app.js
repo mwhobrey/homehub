@@ -705,6 +705,9 @@
       recurChk.checked = false;
       recurrenceBox.classList.add('hidden');
     }
+    if (show && form && window.homehubRecurrence) {
+      window.homehubRecurrence.bind(form);
+    }
   }
 
   function openForm(mode, data) {
@@ -718,6 +721,7 @@
     const dateInput = form.querySelector('[name=date]');
     const tzSel = $('calTimeZoneSelect');
     const attInput = $('calAttendeesInput');
+    if (form && window.homehubRecurrence) window.homehubRecurrence.bind(form);
     if (mode === 'edit' && data) {
       if (data.isRule && data.id) {
         editingRuleId = data.id;
@@ -727,7 +731,11 @@
         toggleRecurrence(true);
         form.querySelector('[name=rec_interval]').value = data.interval || 1;
         form.querySelector('[name=rec_unit]').value = data.unit || 'week';
-        if (data.end_date) form.querySelector('[name=rec_end_date]').value = data.end_date;
+        if (window.homehubRecurrence) {
+          window.homehubRecurrence.applyRuleEndDate(form, data.end_date || null);
+        } else if (data.end_date) {
+          form.querySelector('[name=rec_end_date]').value = data.end_date;
+        }
         if (data.time) form.querySelector('[name=time]').value = data.time;
         if (data.category) form.querySelector('[name=category]').value = data.category;
         if (eventColorPicker) eventColorPicker.setValue(data.color || null);
@@ -843,7 +851,9 @@
         recurring: {
           interval,
           unit: fd.get('rec_unit') || 'week',
-          end_date: fd.get('rec_end_date') || undefined,
+          end_date: window.homehubRecurrence
+            ? window.homehubRecurrence.endDateForPayload(form)
+            : (fd.get('rec_end_date') || null),
         },
       };
       if (window.homehubCalendarSync) {
@@ -872,7 +882,9 @@
         color: colorVal || undefined,
         interval,
         unit: fd.get('rec_unit') || 'week',
-        end_date: fd.get('rec_end_date') || undefined,
+        end_date: window.homehubRecurrence
+          ? window.homehubRecurrence.endDateForPayload(form)
+          : (fd.get('rec_end_date') || null),
       });
       if (!res.ok) {
         alert(res.error || 'Save failed');

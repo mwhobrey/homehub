@@ -116,6 +116,45 @@ def test_end_date_inclusive(client):
     assert '2025-10-13' not in [r['date'] for r in rems]
 
 
+def test_forever_without_end_date(client):
+    anchor = date(2025, 10, 1)
+    payload = {
+        'date': anchor.strftime('%Y-%m-%d'),
+        'title': 'ForeverDaily',
+        'description': 'x',
+        'creator': 'Alice',
+        'recurring': {'interval': 1, 'unit': 'day', 'end_date': None},
+    }
+    r = client.post('/api/reminders', json=payload)
+    assert r.status_code == 200
+    data = list_month(client, 2025, 10)
+    expected = [f'2025-10-{d:02d}' for d in range(1, 32)]
+    assert_dates_for_title(data, 'ForeverDaily', expected)
+
+
+def test_patch_clears_end_date_for_forever(client):
+    anchor = date(2025, 10, 10)
+    end = anchor + timedelta(days=2)
+    payload = {
+        'date': anchor.strftime('%Y-%m-%d'),
+        'title': 'ThenForever',
+        'description': 'x',
+        'creator': 'Alice',
+        'recurring': {'interval': 1, 'unit': 'day', 'end_date': end.strftime('%Y-%m-%d')},
+    }
+    r = client.post('/api/reminders', json=payload)
+    assert r.status_code == 200
+    rid = r.get_json()['recurring_id']
+    patch = client.patch(
+        f'/api/recurring_rules/{rid}',
+        json={'creator': 'Alice', 'end_date': None},
+    )
+    assert patch.status_code == 200
+    data = list_month(client, 2025, 10)
+    expected = [f'2025-10-{d:02d}' for d in range(10, 32)]
+    assert_dates_for_title(data, 'ThenForever', expected)
+
+
 def test_legacy_frequency_compat(client):
     anchor = date(2025, 10, 3)
     payload = {
