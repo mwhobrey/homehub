@@ -11,6 +11,11 @@ from ..user_context import (
     current_firebase_uid,
 )
 from ..security import sanitize_html, sanitize_text, normalize_hex_color
+from ..reminder_categories import (
+    load_reminder_categories,
+    save_reminder_categories,
+    slugify_category_key,
+)
 from sqlalchemy import func
 import json
 
@@ -92,24 +97,8 @@ def index():
     family = list(dict.fromkeys(config.get('family_members', [])))
     who_statuses = {s.name: s.status for s in HomeStatus.query.all() if s.name in family}
     member_statuses = {ms.name: ms.text for ms in MemberStatus.query.all() if ms.name in family and (ms.text or '').strip()}
-    # Extract reminder categories
-    reminder_categories = []
-    try:
-        rcfg = (config.get('reminders') or {}).get('categories') or []
-        if isinstance(rcfg, list):
-            for entry in rcfg:
-                if not isinstance(entry, dict):
-                    continue
-                key = entry.get('key')
-                if not key:
-                    continue
-                reminder_categories.append({
-                    'key': key,
-                    'label': entry.get('label') or key,
-                    'color': entry.get('color') or None,
-                })
-    except Exception:
-        reminder_categories = []
+    # Household reminder categories (config defaults + DB overrides)
+    reminder_categories = load_reminder_categories(config)
     # Backward compatibility: provide both Python object and pre-serialized JSON
     try:
         reminders_json = json.dumps(by_date)
@@ -273,6 +262,33 @@ def _serialize_recurring_rule(rr: RecurringReminder):
         'linked_calendar_id': getattr(rr, 'linked_calendar_id', None),
         'exception_dates': _exception_dates(rr),
     }
+
+
+@main_bp.route('/api/reminder-categories')
+def api_reminder_categories_list():
+    config = current_app.config.get('HOMEHUB_CONFIG') or {}
+    categories = load_reminder_categories(config)
+    return jsonify({'ok': True, 'categories': categories})
+
+
+@main_bp.route('/api/reminder-categories', methods=['PUT'])
+def api_reminder_categories_save():
+    payload = request.get_json(silent=True) or {}
+    raw = payload.get('categories')
+    if not isinstance(raw, list):
+        return jsonify({'ok': False, 'error': 'invalid_payload'}), 400
+    try:
+        categories = save_reminder_categories(raw)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    return jsonify({'ok': True, 'categories': categories})
+
+
+@main_bp.route('/api/reminder-categories/slug')
+def api_reminder_category_slug():
+    label = request.args.get('label') or ''
+    key = slugify_category_key(label)
+    return jsonify({'ok': True, 'key': key})
 
 
 @main_bp.route('/api/reminders')

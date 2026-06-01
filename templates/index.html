@@ -323,7 +323,36 @@ window.REMINDERS_CAL_START = (function(){
 		if(live) live.textContent=msg;
 	}
 	let catPalette={};
-	try{ const cats=JSON.parse(catDataEl?.textContent||'[]'); if(cats.length){ categoryRow.classList.remove('hidden'); categorySelect.innerHTML='<option value="">(No category)</option>'+cats.map(c=>`<option value="${c.key}">${c.label||c.key}</option>`).join(''); cats.forEach(c=>{ catPalette[c.key]=c.color||'#2563eb'; }); } }catch(e){}
+	let householdCategories=[];
+	try{
+		householdCategories=JSON.parse(catDataEl?.textContent||'[]');
+		if(householdCategories.length){
+			categoryRow.classList.remove('hidden');
+			if(window.homehubReminderCategories){
+				window.homehubReminderCategories.populateSelect(categorySelect, householdCategories);
+			} else {
+				categorySelect.innerHTML='<option value="">(No category)</option>'+householdCategories.map(c=>`<option value="${c.key}">${c.label||c.key}</option>`).join('');
+			}
+			householdCategories.forEach(c=>{ catPalette[c.key]=c.color||'#2563eb'; });
+		}
+	}catch(e){}
+	async function refreshHouseholdCategories(){
+		if(!window.homehubReminderCategories) return;
+		try{
+			const res=await window.homehubReminderCategories.fetchList();
+			if(!res.ok) return;
+			householdCategories=res.categories||[];
+			window.homehubReminderCategories.applyStyles(householdCategories);
+			if(householdCategories.length){
+				categoryRow.classList.remove('hidden');
+				window.homehubReminderCategories.populateSelect(categorySelect, householdCategories);
+				catPalette={};
+				householdCategories.forEach(c=>{ catPalette[c.key]=c.color||'#2563eb'; });
+				renderList();
+			}
+		}catch(err){ console.warn('refresh categories', err); }
+	}
+	refreshHouseholdCategories();
 	function categoryColor(k){ return catPalette[k]; }
 	function escapeHtml(str){ return (str||'').replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 	// Unified bulk bar updater (delegated-safe)
@@ -773,13 +802,9 @@ window.REMINDERS_CAL_START = (function(){
 		const totalCount = Object.values(counts).reduce((a,b)=>a+b, 0);
 		allBtn.textContent = `All: ${totalCount}`;
 		wrap.appendChild(allBtn);
-		// Build key→label lookup from reminderCategoriesData
-		let catDataEl = document.getElementById('reminderCategoriesData');
+		// Build key→label lookup from household categories
 		let catLabelMap = {};
-		try {
-			const cats = JSON.parse(catDataEl?.textContent || '[]');
-			cats.forEach(c => { if(c && c.key) catLabelMap[c.key] = c.label || c.key; });
-		} catch(e) {}
+		householdCategories.forEach(c => { if(c && c.key) catLabelMap[c.key] = c.label || c.key; });
 		// Create category buttons
 		ordered.forEach(([k, v]) => {
 			const act = activeCategory === k;

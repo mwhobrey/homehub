@@ -5,6 +5,7 @@ from flask import current_app, render_template
 from ..blueprints import main_bp
 from ..blueprints.dashboard import _household_timezone
 from ..google_calendar.acl import google_calendar_enabled
+from ..reminder_categories import load_reminder_categories
 
 # Common IANA zones for household calendar UI (extend as needed)
 TIMEZONE_OPTIONS = [
@@ -38,14 +39,7 @@ def calendar_page():
     tz_options = list(TIMEZONE_OPTIONS)
     if household_tz and household_tz not in tz_options:
         tz_options.insert(1, household_tz)
-    categories = []
-    for entry in rem.get('categories') or []:
-        if isinstance(entry, dict) and entry.get('key'):
-            categories.append({
-                'key': entry['key'],
-                'label': entry.get('label') or entry['key'],
-                'color': entry.get('color'),
-            })
+    categories = load_reminder_categories(config)
     return render_template(
         'calendar.html',
         config=config,

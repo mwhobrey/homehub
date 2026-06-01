@@ -16,10 +16,40 @@
   } catch (_) {
     categories = [];
   }
-  const catMap = {};
+  let catMap = {};
   categories.forEach((c) => {
     catMap[c.key] = c;
   });
+
+  function applyCategories(cats) {
+    categories = cats || [];
+    catMap = {};
+    categories.forEach((c) => {
+      catMap[c.key] = c;
+    });
+    if (window.homehubReminderCategories) {
+      window.homehubReminderCategories.applyStyles(categories);
+      const sel = $('calCategorySelect');
+      const current = form?.querySelector('[name=category]')?.value || '';
+      window.homehubReminderCategories.populateSelect(sel, categories, current || null);
+    }
+    renderFilters();
+  }
+
+  async function loadCategories() {
+    if (window.homehubReminderCategories) {
+      try {
+        const res = await window.homehubReminderCategories.fetchList();
+        if (res.ok) {
+          applyCategories(res.categories);
+          return;
+        }
+      } catch (e) {
+        console.warn('load categories', e);
+      }
+    }
+    applyCategories(categories);
+  }
 
   let view = 'month';
   let anchor = new Date();
@@ -174,7 +204,13 @@
     try {
       const data = await window.calendarSyncApi.calendars();
       if (data.ok) {
-        linkedCalendars = [...(data.own || []), ...(data.visible || [])];
+        linkedCalendars = [...(data.own || []), ...(data.visible || [])].filter(
+          (c) => c.sync_enabled !== false
+        );
+        const syncedIds = new Set(linkedCalendars.map((c) => String(c.id)));
+        for (const key of hiddenCals) {
+          if (key !== LOCAL_LANE_KEY && !syncedIds.has(key)) hiddenCals.delete(key);
+        }
       }
     } catch (e) {
       console.warn('calendar lanes', e);
@@ -971,11 +1007,20 @@
       await loadEvents();
     },
     onCalendarsUpdated: loadLinkedCalendars,
+    setCategories: applyCategories,
   };
+
+  if (window.homehubReminderCategories && $('calCategoryManager')) {
+    window.__calCategoryMgr = window.homehubReminderCategories.mountManager($('calCategoryManager'), {
+      initial: categories.slice(),
+      onChange: applyCategories,
+    });
+  }
 
   renderWeekdayHeaders();
   selectDay(selectedYmd);
   (async () => {
+    await loadCategories();
     await loadLinkedCalendars();
     await loadEvents();
   })();
