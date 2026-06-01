@@ -214,8 +214,8 @@ def create_app(test_config: dict | None = None):
                 app.logger.error(
                     'Firebase service account mount is a directory at %s — '
                     'the JSON file was likely missing on first docker compose up. '
-                    'Place secrets/firebase-service-account.json on the host (./secrets mount), then '
-                    'docker compose -f compose.prod.yml up -d --force-recreate',
+                    'Recreate secrets/firebase-service-account.json on the host (see deploy/check-firebase-secret.sh), then '
+                    'docker compose -f compose.prod.yml up -d --build --force-recreate',
                     cred_path,
                 )
             elif cred_path and not os.path.isfile(cred_path):

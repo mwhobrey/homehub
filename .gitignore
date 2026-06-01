@@ -1,6 +1,7 @@
 # Database files
 data/app.db
 data/qr/
+data/firebase-service-account.json
 database.db
 
 # User-uploaded files

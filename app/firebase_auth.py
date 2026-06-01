@@ -25,9 +25,9 @@ def init_firebase() -> None:
     else:
         hint = f'path={path!r}'
         if path and os.path.isdir(path):
-            hint += ' (is a directory — host file was missing when container started; recreate container)'
+            hint += ' (is a directory — recreate secrets/firebase-service-account.json on host)'
         elif path:
-            hint += ' (file not found inside container)'
+            hint += ' (not readable — run deploy/check-firebase-secret.sh on host; use data/ fallback)'
         raise RuntimeError(
             'Firebase credentials missing. Set FIREBASE_SERVICE_ACCOUNT_FILE or '
             f'FIREBASE_SERVICE_ACCOUNT_JSON. Checked {hint}'

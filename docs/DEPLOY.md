@@ -58,7 +58,7 @@ Edit **`.env`**:
 | `DOMAIN` | `home.yourdomain.com` |
 | `ACME_EMAIL` | `you@gmail.com` |
 | `SECRET_KEY` | 64-char hex from `python -c "import secrets; print(secrets.token_hex(32))"` |
-| Firebase service account | `secrets/firebase-service-account.json` on host → `/run/secrets/` in container |
+| Firebase service account | `secrets/firebase-service-account.json` (or `data/firebase-service-account.json` fallback) |
 
 Edit **`config.yml`** — set `auth.mode: firebase` and your family:
 
@@ -175,33 +175,49 @@ To restrict WiFi QR creation to admins: `admin_only_wifi: true`.
 | Redirect loop | Ensure `TRUST_PROXY=1` and Caddy forwards `X-Forwarded-Proto`. |
 | `Firebase credentials missing` on sign-in | See below |
 
-### Firebase sign-in: credentials missing
+### Firebase sign-in: credentials missing or I/O error
 
-Inside the container the file must be **`/run/secrets/firebase-service-account.json`** (host: `secrets/firebase-service-account.json`).
+The entrypoint copies a readable JSON file into **`/tmp/firebase-sa.json`** (avoids stale Docker bind mounts).
 
-```bash
-# On the host — must be a real JSON file before compose up
-ls -la secrets/firebase-service-account.json
-file secrets/firebase-service-account.json
-
-# Inside the container
-docker exec homehub ls -la /run/secrets/
-docker exec homehub head -1 /run/secrets/firebase-service-account.json   # should show {
-
-docker exec homehub printenv FIREBASE_SERVICE_ACCOUNT_FILE
-# /run/secrets/firebase-service-account.json
-```
-
-**`head: I/O error`** on the old single-file mount (`firebase-sa.json`) means the bind mount is broken — usually the host file was missing on first `up`, or you replaced the JSON while the container was running. Fix:
+**Step 1 — must pass on the host** (if this fails, the container cannot fix it):
 
 ```bash
 cd ~/homehub
-git pull   # compose mounts ./secrets -> /run/secrets (directory mount)
-docker compose -f compose.prod.yml down
-ls -la secrets/firebase-service-account.json   # must be a file
-chmod 600 secrets/firebase-service-account.json
-docker compose -f compose.prod.yml up -d --force-recreate
-docker exec homehub head -1 /run/secrets/firebase-service-account.json
+bash deploy/check-firebase-secret.sh
+# or manually:
+head -1 secrets/firebase-service-account.json   # must print {
 ```
 
-`root:root` with mode `600` is fine — the app runs as root in the image.
+**`head: I/O error` on the host** means `secrets/firebase-service-account.json` is a broken Docker artifact (not a real file). Recreate it:
+
+```bash
+cd ~/homehub
+docker compose -f compose.prod.yml down
+rm -rf secrets/firebase-service-account.json    # safe if I/O error or it's a directory
+mkdir -p secrets data
+# Paste a fresh key from Firebase Console → Project settings → Service accounts → Generate new private key
+nano secrets/firebase-service-account.json
+chmod 600 secrets/firebase-service-account.json
+head -1 secrets/firebase-service-account.json   # must print { before continuing
+```
+
+**Workaround** — put the key on the `data/` volume (same mount as the SQLite DB, usually reliable):
+
+```bash
+cp /path/to/your-downloaded-firebase-sa.json data/firebase-service-account.json
+chmod 600 data/firebase-service-account.json
+head -1 data/firebase-service-account.json
+```
+
+**Step 2 — rebuild and verify in the container:**
+
+```bash
+git pull
+docker compose -f compose.prod.yml up -d --build --force-recreate
+docker logs homehub 2>&1 | grep homehub-entrypoint
+docker exec homehub head -1 /tmp/firebase-sa.json   # must print {
+docker exec homehub printenv FIREBASE_SERVICE_ACCOUNT_FILE
+# /tmp/firebase-sa.json
+```
+
+`root:root` with mode `600` on the host is fine.

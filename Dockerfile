@@ -45,6 +45,10 @@ COPY . /app
 # Copy built Tailwind CSS from builder
 COPY --from=builder /app/static/output.css /app/static/output.css
 
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 5000
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["gunicorn", "wsgi:app", "-w", "1", "-k", "sync", "-b", "0.0.0.0:5000", "--access-logfile", "-", "--error-logfile", "-"]

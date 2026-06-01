@@ -23,15 +23,13 @@ services:
       - ./pdfs:/app/pdfs
       - ./data:/app/data
       - ./config.yml:/app/config.yml:ro
-      # Mount secrets/ as a directory (single-file bind mounts break with I/O errors
-      # if the host file is replaced or was missing on first container start).
-      - ./secrets:/run/secrets:ro
+      - ./secrets:/app/credentials:ro
     environment:
       FLASK_ENV: production
       SECRET_KEY: ${SECRET_KEY}
       TRUST_PROXY: "1"
       SESSION_COOKIE_SECURE: "1"
-      FIREBASE_SERVICE_ACCOUNT_FILE: /run/secrets/firebase-service-account.json
+      FIREBASE_CREDENTIALS_SRC: /app/credentials/firebase-service-account.json
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
       SESSION_DAYS: ${SESSION_DAYS:-14}
     networks:
