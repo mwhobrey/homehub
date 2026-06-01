@@ -24,6 +24,8 @@ home.yourdomain.com {
 	# reverse_proxy host.docker.internal:5000 { ... same headers ... }
 	# reverse_proxy 172.17.0.1:5000 { ... }   # Linux default docker bridge
 
-	# C) Caddy + HomeHub on same Docker network (container name homehub):
+	# C) Headscale bundle — same pattern as vaultwarden / uptimekuma (recommended):
+	#   1. PROXY_NETWORK=reverseproxy-nw in homehub .env (see docker inspect caddy)
+	#   2. docker compose -f compose.prod.yml up -d
 	# reverse_proxy homehub:5000 { ... same headers ... }
 }

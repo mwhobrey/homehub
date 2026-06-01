@@ -123,7 +123,7 @@ caddy reload --config /path/to/Caddyfile
 |------------------|------------------------|
 | On the host (systemd) | `127.0.0.1:5000` |
 | In Docker | `host.docker.internal:5000` or `172.17.0.1:5000` |
-| Same Docker network as HomeHub | `homehub:5000` (connect Caddy to network `homehub_internal`: `docker network connect homehub_internal <caddy-container>`) |
+| Headscale / shared proxy network | `homehub:5000` — set `PROXY_NETWORK` in HomeHub `.env` (usually `reverseproxy-nw`; confirm with `docker inspect caddy`) |
 
 Visit `https://your-domain` → **Continue with Google**.
 

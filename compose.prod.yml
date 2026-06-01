@@ -34,8 +34,12 @@ services:
       SESSION_DAYS: ${SESSION_DAYS:-14}
     networks:
       - homehub_internal
+      - proxy
 
 networks:
   homehub_internal:
     name: homehub_internal
     driver: bridge
+  proxy:
+    name: ${PROXY_NETWORK:-reverseproxy-nw}
+    external: true
