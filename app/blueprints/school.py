@@ -40,21 +40,32 @@ from ..school_permissions import (
     school_role_label,
     visible_class_ids,
 )
+from ..school_permissions import (
+    default_student_selection,
+    default_teacher_selection,
+    student_picker_options,
+    teacher_picker_options,
+)
 from ..school_services import (
     ASSIGNMENT_STATUSES,
     ATTENDANCE_STATUSES,
     SUBMISSION_STATUSES,
     audit_log,
     class_analytics,
+    class_teacher_ids,
     compute_is_late,
     dashboard_summary,
     get_or_create_submission,
     parse_due_at,
+    parse_student_ids_payload,
+    parse_teacher_ids_payload,
     sanitize_assignment_html,
+    sync_class_students,
     school_feature_enabled,
     serialize_assignment,
     serialize_class,
     serialize_submission,
+    sync_class_teachers,
     validate_submission_url,
     weighted_gradebook,
 )
@@ -95,18 +106,26 @@ def school_index():
     config = current_app.config['HOMEHUB_CONFIG']
     class_ids = visible_class_ids(actor)
     classes = SchoolClass.query.filter(SchoolClass.id.in_(class_ids)).order_by(SchoolClass.name).all() if class_ids else []
+    class_cards = [(c, class_teacher_ids(c)) for c in classes]
     summary = dashboard_summary(actor, class_ids)
     role = school_role_label(actor)
-    family = config.get('family_members') or []
     school_cfg = config.get('school') or {}
+    teacher_options = teacher_picker_options()
+    default_teachers = default_teacher_selection(actor)
+    student_options = student_picker_options()
+    default_students = default_student_selection()
     return render_template(
         'school/index.html',
         config=config,
         classes=classes,
+        class_cards=class_cards,
         summary=summary,
         school_role=role,
-        family_members=family,
         school_cfg=school_cfg,
+        teacher_options=teacher_options,
+        default_teachers=default_teachers,
+        student_options=student_options,
+        default_students=default_students,
         is_school_admin=is_school_admin(actor),
     )
 
@@ -124,16 +143,24 @@ def school_class_detail(class_id):
     categories = AssignmentCategory.query.filter_by(class_id=class_id).all()
     can_manage = can_manage_class(class_id, actor)
     config = current_app.config['HOMEHUB_CONFIG']
+    class_teachers = class_teacher_ids(cls)
+    enrolled_student_names = {
+        e.student_id for e in enrollments if e.role == 'student'
+    }
+    student_options = student_picker_options()
+    default_students = default_student_selection(exclude=enrolled_student_names)
     return render_template(
         'school/class_detail.html',
         config=config,
         school_class=cls,
+        class_teachers=class_teachers,
         assignments=assignments,
         enrollments=enrollments,
         categories=categories,
         can_manage=can_manage,
         school_role=school_role_label(actor),
-        family_members=config.get('family_members') or [],
+        student_options=student_options,
+        default_students=default_students,
         today=date.today().isoformat(),
     )
 
@@ -212,16 +239,28 @@ def api_school_classes():
     name = sanitize_text(data.get('name', '')).strip()
     if not name:
         return _api_err('name_required')
+    try:
+        teacher_ids = parse_teacher_ids_payload(data, actor=actor)
+    except Exception:
+        teacher_ids = []
     cls = SchoolClass(
         name=name,
         subject=sanitize_text(data.get('subject', '')),
         term=sanitize_text(data.get('term', '')),
-        teacher_id=sanitize_text(data.get('teacher_id') or actor),
+        teacher_id=actor,
         schedule_json=json.dumps(data.get('schedule') or {}),
         creator=resolve_actor(json_payload=data),
     )
     db.session.add(cls)
     db.session.flush()
+    try:
+        sync_class_teachers(cls, teacher_ids, actor=actor)
+    except ValueError:
+        db.session.rollback()
+        return _api_err('teachers_required')
+    student_ids = parse_student_ids_payload(data)
+    if student_ids:
+        sync_class_students(cls.id, student_ids)
     audit_log(actor, 'create', 'school_class', cls.id, after=serialize_class(cls))
     db.session.commit()
     return _api_ok(class_=serialize_class(cls))
@@ -253,8 +292,11 @@ def api_school_class(class_id):
         cls.subject = sanitize_text(data.get('subject', ''))
     if 'term' in data:
         cls.term = sanitize_text(data.get('term', ''))
-    if 'teacher_id' in data:
-        cls.teacher_id = sanitize_text(data['teacher_id'])
+    if 'teacher_ids' in data or 'teacher_id' in data:
+        try:
+            sync_class_teachers(cls, parse_teacher_ids_payload(data, actor=actor), actor=actor)
+        except ValueError:
+            return _api_err('teachers_required')
     if 'archived' in data:
         cls.archived = bool(data['archived'])
     if 'schedule' in data:
@@ -281,12 +323,26 @@ def api_school_enrollments(class_id):
     if not can_manage_class(class_id, actor):
         return _api_err('forbidden', 403)
     data = request.get_json(silent=True) or {}
-    student_id = sanitize_text(data.get('student_id', '')).strip()
-    if not student_id:
-        return _api_err('student_required')
     role = sanitize_text(data.get('role', 'student')).strip() or 'student'
     if role not in ('student', 'teacher', 'assistant'):
         return _api_err('invalid_role')
+
+    if role == 'student':
+        student_ids = parse_student_ids_payload(data)
+        if not student_ids:
+            return _api_err('student_required')
+        enrolled = sync_class_students(class_id, student_ids)
+        if not enrolled:
+            return _api_err('already_enrolled')
+        audit_log(actor, 'enroll', 'school_enrollment', None, after={
+            'class_id': class_id, 'student_ids': enrolled,
+        })
+        db.session.commit()
+        return _api_ok(enrolled=enrolled, count=len(enrolled))
+
+    student_id = sanitize_text(data.get('student_id', '')).strip()
+    if not student_id:
+        return _api_err('student_required')
     existing = Enrollment.query.filter_by(class_id=class_id, student_id=student_id).first()
     if existing:
         return _api_err('already_enrolled')

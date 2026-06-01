@@ -44,16 +44,44 @@
     {% if is_school_admin or school_role == 'teacher' %}
     <div class="card p-4 mb-6">
         <h3 class="font-semibold mb-3">Create class</h3>
-        <form id="createClassForm" class="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <input type="text" name="name" placeholder="Class name" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
-            <input type="text" name="subject" placeholder="Subject" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
-            <input type="text" name="term" placeholder="Term (e.g. Fall 2026)" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
-            <select name="teacher_id" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
-                {% for m in family_members %}
-                <option value="{{ m }}">{{ m }}</option>
-                {% endfor %}
-            </select>
-            <div class="md:col-span-4">
+        <form id="createClassForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Class name</label>
+                <input type="text" name="name" placeholder="e.g. Algebra I" class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+                <input type="text" name="subject" placeholder="e.g. Math" class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Term</label>
+                <input type="text" name="term" placeholder="e.g. Fall 2026" class="w-full p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+            </div>
+            <div class="md:col-span-2 lg:col-span-1">
+                <label for="classStudents" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Students</label>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Enroll when the class is created. All configured students selected by default.</p>
+                <select id="classStudents" name="student_ids" multiple size="{{ [student_options|length, 3]|max }}" class="w-full min-h-[5.5rem] p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
+                    {% for s in student_options %}
+                    <option value="{{ s }}" {% if s in default_students %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+                {% if not student_options %}
+                <p class="text-xs text-amber-600 mt-1">Add names under <code>school.students</code> in config.yml.</p>
+                {% endif %}
+            </div>
+            <div class="md:col-span-2 lg:col-span-3">
+                <label for="classTeachers" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Teachers</label>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Hold Ctrl (Windows) or Cmd (Mac) to change selection. All configured teachers are selected by default.</p>
+                <select id="classTeachers" name="teacher_ids" multiple size="{{ [teacher_options|length, 3]|max }}" class="w-full min-h-[5.5rem] p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+                    {% for t in teacher_options %}
+                    <option value="{{ t }}" {% if t in default_teachers %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+                {% if not teacher_options %}
+                <p class="text-xs text-amber-600 mt-1">Add names under <code>school.teachers</code> in config.yml.</p>
+                {% endif %}
+            </div>
+            <div class="md:col-span-2 lg:col-span-4">
                 <button type="submit" class="btn btn-primary">Add class</button>
             </div>
         </form>
@@ -62,11 +90,11 @@
 
     <h3 class="text-lg font-semibold mb-3">Your classes</h3>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {% for c in classes %}
+        {% for c, teachers in class_cards %}
         <a href="/school/class/{{ c.id }}" class="card p-4 block hover:ring-2 hover:ring-blue-400 transition">
             <div class="font-semibold text-lg">{{ c.name }}</div>
             <div class="text-sm text-gray-600 dark:text-gray-400">{{ c.subject or 'General' }}{% if c.term %} · {{ c.term }}{% endif %}</div>
-            <div class="text-xs mt-2">Teacher: {{ c.teacher_id }}</div>
+            <div class="text-xs mt-2">Teachers: {{ teachers|join(', ') }}</div>
         </a>
         {% else %}
         <p class="text-gray-500">No classes yet.{% if is_school_admin or school_role == 'teacher' %} Create one above.{% endif %}</p>

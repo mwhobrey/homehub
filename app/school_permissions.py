@@ -31,8 +31,59 @@ def configured_teachers() -> set[str]:
     return {str(x).strip() for x in (_school_cfg().get('teachers') or []) if str(x).strip()}
 
 
+def teacher_picker_options() -> list[str]:
+    """Names eligible to be assigned as class teachers (school.teachers, else household minus students)."""
+    teachers = sorted(configured_teachers())
+    if teachers:
+        return teachers
+    cfg = current_app.config.get('HOMEHUB_CONFIG') or {}
+    family = [str(m).strip() for m in (cfg.get('family_members') or []) if str(m).strip()]
+    students = configured_students()
+    if students:
+        return sorted(m for m in family if m not in students)
+    return sorted(family)
+
+
+def default_teacher_selection(actor: str | None = None) -> list[str]:
+    """Pre-select all configured teachers when creating a class."""
+    options = teacher_picker_options()
+    configured = configured_teachers()
+    if configured:
+        return sorted(configured.intersection(options) or configured)
+    name = actor or actor_name()
+    if name and name in options:
+        return [name]
+    return list(options)
+
+
 def configured_students() -> set[str]:
     return {str(x).strip() for x in (_school_cfg().get('students') or []) if str(x).strip()}
+
+
+def student_picker_options() -> list[str]:
+    """Names eligible for student enrollment (school.students, else household minus teachers)."""
+    students = sorted(configured_students())
+    if students:
+        return students
+    cfg = current_app.config.get('HOMEHUB_CONFIG') or {}
+    family = [str(m).strip() for m in (cfg.get('family_members') or []) if str(m).strip()]
+    teachers = configured_teachers()
+    if teachers:
+        return sorted(m for m in family if m not in teachers)
+    return sorted(family)
+
+
+def default_student_selection(*, exclude: set[str] | None = None) -> list[str]:
+    """Pre-select all configured students (optionally skip already-enrolled names)."""
+    options = student_picker_options()
+    configured = configured_students()
+    if configured:
+        picked = sorted(configured.intersection(options) or configured)
+    else:
+        picked = list(options)
+    if exclude:
+        picked = [s for s in picked if s not in exclude]
+    return picked
 
 
 def parent_child_map() -> dict[str, set[str]]:

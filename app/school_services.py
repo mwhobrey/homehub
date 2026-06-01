@@ -20,6 +20,7 @@ from .models import (
     Submission,
     db,
 )
+from .school_permissions import configured_teachers
 from .security import sanitize_html, sanitize_text
 
 
@@ -106,13 +107,102 @@ def compute_missing_flag(assignment: Assignment, submission: Submission | None) 
     return datetime.utcnow() > assignment.due_at
 
 
+def class_teacher_ids(cls: SchoolClass) -> list[str]:
+    """All teachers for a class (primary + teacher/assistant enrollments)."""
+    names: list[str] = []
+    if cls.teacher_id:
+        names.append(cls.teacher_id)
+    rows = Enrollment.query.filter_by(class_id=cls.id).filter(
+        Enrollment.role.in_(('teacher', 'assistant'))
+    ).all()
+    for row in rows:
+        if row.student_id and row.student_id not in names:
+            names.append(row.student_id)
+    return names
+
+
+def sync_class_teachers(cls: SchoolClass, teacher_ids: list[str], *, actor: str = '') -> None:
+    """Set primary teacher_id and teacher enrollments from a multi-select list."""
+    cleaned: list[str] = []
+    for raw in teacher_ids or []:
+        name = sanitize_text(str(raw)).strip()
+        if name and name not in cleaned:
+            cleaned.append(name)
+    if not cleaned and actor:
+        cleaned = [actor]
+    if not cleaned:
+        raise ValueError('teachers_required')
+    cls.teacher_id = cleaned[0]
+    want = set(cleaned)
+    existing = Enrollment.query.filter_by(class_id=cls.id).filter(
+        Enrollment.role.in_(('teacher', 'assistant'))
+    ).all()
+    existing_by_name = {e.student_id: e for e in existing}
+    for name in want:
+        if name not in existing_by_name:
+            db.session.add(Enrollment(class_id=cls.id, student_id=name, role='teacher'))
+    for enr in existing:
+        if enr.student_id not in want:
+            db.session.delete(enr)
+
+
+def parse_student_ids_payload(data: dict) -> list[str]:
+    if 'student_ids' in data and data['student_ids'] is not None:
+        raw = data['student_ids']
+        if isinstance(raw, str):
+            return [sanitize_text(raw).strip()] if sanitize_text(raw).strip() else []
+        if isinstance(raw, (list, tuple)):
+            return [sanitize_text(str(x)).strip() for x in raw if sanitize_text(str(x)).strip()]
+    if data.get('student_id'):
+        name = sanitize_text(data['student_id']).strip()
+        return [name] if name else []
+    return []
+
+
+def sync_class_students(class_id: int, student_ids: list[str]) -> list[str]:
+    """Enroll students (role=student); skip duplicates. Returns newly enrolled ids."""
+    cleaned: list[str] = []
+    for raw in student_ids or []:
+        name = sanitize_text(str(raw)).strip()
+        if name and name not in cleaned:
+            cleaned.append(name)
+    if not cleaned:
+        return []
+    enrolled: list[str] = []
+    for name in cleaned:
+        existing = Enrollment.query.filter_by(class_id=class_id, student_id=name, role='student').first()
+        if existing:
+            continue
+        db.session.add(Enrollment(class_id=class_id, student_id=name, role='student'))
+        enrolled.append(name)
+    return enrolled
+
+
+def parse_teacher_ids_payload(data: dict, *, actor: str = '') -> list[str]:
+    if 'teacher_ids' in data and data['teacher_ids'] is not None:
+        raw = data['teacher_ids']
+        if isinstance(raw, str):
+            return [sanitize_text(raw).strip()] if sanitize_text(raw).strip() else []
+        if isinstance(raw, (list, tuple)):
+            return [sanitize_text(str(x)).strip() for x in raw if sanitize_text(str(x)).strip()]
+    if data.get('teacher_id'):
+        name = sanitize_text(data['teacher_id']).strip()
+        return [name] if name else []
+    configured = sorted(configured_teachers())
+    if configured:
+        return configured
+    return [actor] if actor else []
+
+
 def serialize_class(cls: SchoolClass) -> dict[str, Any]:
+    teachers = class_teacher_ids(cls)
     return {
         'id': cls.id,
         'name': cls.name,
         'subject': cls.subject or '',
         'term': cls.term or '',
         'teacher_id': cls.teacher_id,
+        'teacher_ids': teachers,
         'archived': bool(cls.archived),
         'schedule': json.loads(cls.schedule_json or '{}'),
     }

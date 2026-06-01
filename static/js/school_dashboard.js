@@ -10,12 +10,25 @@
     createClassForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(createClassForm);
+      const teacherSelect = createClassForm.querySelector('[name="teacher_ids"]');
+      const teacher_ids = teacherSelect
+        ? Array.from(teacherSelect.selectedOptions).map((o) => o.value)
+        : [];
+      if (!teacher_ids.length) {
+        toast('Select at least one teacher', true);
+        return;
+      }
+      const studentSelect = createClassForm.querySelector('[name="student_ids"]');
+      const student_ids = studentSelect
+        ? Array.from(studentSelect.selectedOptions).map((o) => o.value)
+        : [];
       try {
         await SchoolAPI.createClass({
           name: fd.get('name'),
           subject: fd.get('subject'),
           term: fd.get('term'),
-          teacher_id: fd.get('teacher_id'),
+          teacher_ids,
+          student_ids,
         });
         window.location.reload();
       } catch (err) {
@@ -29,9 +42,16 @@
     enrollForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const classId = enrollForm.dataset.classId;
-      const fd = new FormData(enrollForm);
+      const studentSelect = enrollForm.querySelector('[name="student_ids"]');
+      const student_ids = studentSelect
+        ? Array.from(studentSelect.selectedOptions).map((o) => o.value)
+        : [];
+      if (!student_ids.length) {
+        toast('Select at least one student', true);
+        return;
+      }
       try {
-        await SchoolAPI.enroll(classId, { student_id: fd.get('student_id'), role: fd.get('role') || 'student' });
+        await SchoolAPI.enroll(classId, { student_ids, role: 'student' });
         window.location.reload();
       } catch (err) {
         toast(err.message || 'Enroll failed', true);

@@ -103,7 +103,7 @@ def _create_class(client, teacher='Teacher'):
 
 def _enroll(client, class_id, student_id='Student'):
     r = client.post(f'/api/school/classes/{class_id}/enrollments', json={
-        'student_id': student_id,
+        'student_ids': [student_id],
         'role': 'student',
         'creator': 'Teacher',
     })
@@ -126,6 +126,37 @@ def _create_assignment(client, class_id, status='assigned'):
 def test_school_page_requires_feature(client):
     r = client.get('/school')
     assert r.status_code == 200
+
+
+def test_create_class_with_teachers_and_students(client, app):
+    r = client.post('/api/school/classes', json={
+        'name': 'Homeroom',
+        'teacher_ids': ['Teacher'],
+        'student_ids': ['Student'],
+        'creator': 'Teacher',
+    })
+    assert r.status_code == 200
+    class_id = r.get_json()['class_']['id']
+    with app.app_context():
+        from app.models import Enrollment
+        students = Enrollment.query.filter_by(class_id=class_id, role='student').all()
+        assert [s.student_id for s in students] == ['Student']
+
+
+def test_create_class_with_multiple_teachers(client, app):
+    r = client.post('/api/school/classes', json={
+        'name': 'Co-taught Science',
+        'teacher_ids': ['Teacher', 'Administrator'],
+        'creator': 'Teacher',
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert set(body['class_']['teacher_ids']) == {'Teacher', 'Administrator'}
+    with app.app_context():
+        from app.school_services import class_teacher_ids
+        from app.models import SchoolClass
+        cls = SchoolClass.query.filter_by(name='Co-taught Science').first()
+        assert set(class_teacher_ids(cls)) == {'Teacher', 'Administrator'}
 
 
 def test_class_lifecycle_and_permissions(client):

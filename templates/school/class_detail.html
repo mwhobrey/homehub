@@ -4,7 +4,7 @@
     <div class="mb-4">
         <a href="/school" class="text-sm text-blue-600 hover:underline">&larr; School</a>
         <h2 class="text-2xl font-bold mt-1">{{ school_class.name }}</h2>
-        <p class="text-sm text-gray-600 dark:text-gray-400">{{ school_class.subject or '' }}{% if school_class.term %} · {{ school_class.term }}{% endif %} · Teacher: {{ school_class.teacher_id }}</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">{{ school_class.subject or '' }}{% if school_class.term %} · {{ school_class.term }}{% endif %} · Teachers: {{ class_teachers|join(', ') }}</p>
     </div>
 
     <div class="flex flex-wrap gap-2 mb-6">
@@ -14,18 +14,23 @@
 
     {% if can_manage %}
     <div class="card p-4 mb-6">
-        <h3 class="font-semibold mb-3">Enroll student</h3>
-        <form id="enrollStudentForm" data-class-id="{{ school_class.id }}" class="flex flex-wrap gap-2">
-            <select name="student_id" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
-                {% for m in family_members %}
-                <option value="{{ m }}">{{ m }}</option>
-                {% endfor %}
-            </select>
-            <select name="role" class="p-2 border rounded dark:bg-gray-800 dark:border-gray-600">
-                <option value="student">Student</option>
-                <option value="assistant">Assistant</option>
-            </select>
-            <button type="submit" class="btn btn-primary">Enroll</button>
+        <h3 class="font-semibold mb-3">Enroll students</h3>
+        <form id="enrollStudentForm" data-class-id="{{ school_class.id }}" class="space-y-3">
+            <div>
+                <label for="enrollStudents" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Students</label>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">From <code>school.students</code> in config. Hold Ctrl/Cmd to adjust selection.</p>
+                <select id="enrollStudents" name="student_ids" multiple size="{{ [student_options|length, 3]|max }}" class="w-full min-h-[5.5rem] p-2 border rounded dark:bg-gray-800 dark:border-gray-600" required>
+                    {% for s in student_options %}
+                    <option value="{{ s }}" {% if s in default_students %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+                {% if not student_options %}
+                <p class="text-xs text-amber-600 mt-1">Add names under <code>school.students</code> in config.yml.</p>
+                {% elif not default_students %}
+                <p class="text-xs text-gray-500 mt-1">All configured students are already enrolled.</p>
+                {% endif %}
+            </div>
+            <button type="submit" class="btn btn-primary">Enroll selected</button>
         </form>
     </div>
 
