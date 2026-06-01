@@ -112,20 +112,28 @@ def _upsert_event(lc: LinkedCalendar, conn: CalendarConnection, event: dict, tz:
         if existing.google_updated and g_updated and existing.google_updated == g_updated:
             return
         if (
-            existing.updated_at
+            g_updated
             and existing.google_updated
-            and existing.google_updated != g_updated
-            and existing.sync_status not in ('synced', 'conflict')
+            and g_updated != existing.google_updated
+            and existing.sync_status not in ('pending_push',)
         ):
             existing.sync_status = 'conflict'
+            existing.google_etag = fields.get('google_etag')
+            existing.google_updated = g_updated
+            db.session.commit()
+            return
+        if existing.sync_status == 'conflict':
+            existing.google_etag = fields.get('google_etag')
+            existing.google_updated = g_updated
+            db.session.commit()
+            return
         for k, v in fields.items():
-            if k.startswith('google_') or k in ('title', 'description', 'date', 'time', 'all_day', 'source'):
+            if k.startswith('google_') or k in (
+                'title', 'description', 'date', 'time', 'all_day', 'source',
+                'end_date', 'end_time', 'time_zone', 'attendees_json',
+            ):
                 setattr(existing, k, v)
-        existing.sync_status = existing.sync_status or 'synced'
-        if existing.sync_status == 'conflict' and fields.get('google_updated') != existing.google_updated:
-            pass
-        else:
-            existing.sync_status = 'synced'
+        existing.sync_status = 'synced'
         db.session.commit()
         return
     r = Reminder(

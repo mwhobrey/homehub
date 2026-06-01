@@ -29,7 +29,11 @@ window.remindersApi = (function(){
     const r = await fetch('/api/reminders/'+id+'/resolve-conflict', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({resolution})});
     return r.json();
   }
-  return {list, create, update, removeMany, updateRule, deleteRule, resolveConflict};
+  async function patchOccurrence(ruleId, data){
+    const r = await fetch('/api/recurring_rules/'+ruleId+'/occurrence', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+    return r.json();
+  }
+  return {list, create, update, removeMany, updateRule, deleteRule, resolveConflict, patchOccurrence};
 })();
 
 window.calendarSyncApi = (function(){

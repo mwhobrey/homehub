@@ -30,6 +30,7 @@ feature_toggles:
   expiry_tracker: true
   url_shortener: true
   expense_tracker: true
+  calendar: true
 
 # Hardening for public deployment (media + QR / WiFi)
 hardening:
@@ -81,6 +82,8 @@ reminders:
   # calendar_start_day controls which day the reminders calendar starts on.
   # Accepts full weekday names (sunday..saturday) or numeric 0-6 where 0=Sunday.  
   calendar_start_day: sunday #default is Sunday
+  # default_timezone for new events when not set per-event (IANA, e.g. America/Chicago)
+  default_timezone: "America/Chicago"
 
   # Example reminder categories (keys lowercase no spaces recommended)
   categories:

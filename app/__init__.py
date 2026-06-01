@@ -191,6 +191,17 @@ def create_app(test_config: dict | None = None):
                 ensure_column(_Reminder.__tablename__, 'owner_uid', 'TEXT', None)
                 ensure_column(_Reminder.__tablename__, 'sync_status', 'TEXT', 'synced')
                 ensure_column(_Reminder.__tablename__, 'all_day', 'INTEGER', 0)
+                ensure_column(_Reminder.__tablename__, 'end_date', 'DATE', None)
+                ensure_column(_Reminder.__tablename__, 'end_time', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'time_zone', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'attendees_json', 'TEXT', None)
+                ensure_column('recurring_reminder', 'exception_dates_json', 'TEXT', None)
+                ensure_column('recurring_reminder', 'linked_calendar_id', 'INTEGER', None)
+                ensure_column('recurring_reminder', 'google_recurring_event_id', 'TEXT', None)
+                ensure_column('recurring_reminder', 'google_etag', 'TEXT', None)
+                ensure_column('recurring_reminder', 'owner_uid', 'TEXT', None)
+                ensure_column('recurring_reminder', 'source', 'TEXT', 'local')
+                ensure_column('recurring_reminder', 'sync_status', 'TEXT', 'synced')
                 # Add 'tags' to recipe for multi-tag feature
                 if not has_column('recipe', 'tags'):
                     cur.execute("ALTER TABLE recipe ADD COLUMN tags TEXT DEFAULT '[]'")
@@ -280,6 +291,7 @@ def create_app(test_config: dict | None = None):
     from .blueprints import qr  # noqa: F401
     from .blueprints import weather  # noqa: F401
     from .blueprints import calendar_sync  # noqa: F401
+    from .blueprints import calendar_page  # noqa: F401
     app.register_blueprint(main_bp)
 
     if not app.config.get('TESTING'):

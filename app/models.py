@@ -139,6 +139,10 @@ class Reminder(db.Model):
     owner_uid = db.Column(db.String(128))
     sync_status = db.Column(db.String(32), default='synced')
     all_day = db.Column(db.Boolean, default=False)
+    end_date = db.Column(db.Date)
+    end_time = db.Column(db.String(5))
+    time_zone = db.Column(db.String(64))
+    attendees_json = db.Column(db.Text)
 
 
 class CalendarConnection(db.Model):
@@ -239,6 +243,13 @@ class RecurringReminder(db.Model):
     last_generated_date = db.Column(db.Date)
     effective_from = db.Column(db.Date)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    exception_dates_json = db.Column(db.Text)
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'))
+    google_recurring_event_id = db.Column(db.String(256))
+    google_etag = db.Column(db.String(128))
+    owner_uid = db.Column(db.String(128))
+    source = db.Column(db.String(16), default='local')
+    sync_status = db.Column(db.String(32), default='synced')
 
 class ExpenseEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)

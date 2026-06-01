@@ -6,6 +6,7 @@ import pytest
 
 from app import create_app, db
 from app.models import Note, Reminder
+from app.security import normalize_hex_color
 
 
 def make_app():
@@ -170,3 +171,11 @@ def test_upload_preview_endpoint_security(client):
     download_res = client.get('/uploads/test.jpg')
     download_disposition = download_res.headers.get('Content-Disposition', '')
     assert 'attachment' in download_disposition.lower(), "Download endpoint should force attachment"
+
+
+def test_normalize_hex_color_accepts_full_and_short():
+    assert normalize_hex_color('#AbCdEf') == '#abcdef'
+    assert normalize_hex_color('f00') == '#ff0000'
+    assert normalize_hex_color('') is None
+    assert normalize_hex_color('not-a-color') is None
+    assert normalize_hex_color('#gggggg') is None

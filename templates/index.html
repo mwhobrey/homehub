@@ -161,7 +161,10 @@ window.REMINDERS_CAL_START = (function(){
 	<div class="space-y-6">
 		<!-- Reminders & Calendar (moved to right column) -->
 		<div class="card p-6" id="remindersCard" style="min-height:520px">
-			<h2 class="text-xl font-bold flex items-center gap-2 mb-3"><i class="fa-solid fa-calendar-days text-blue-600"></i> Reminders</h2>
+			<div class="flex flex-wrap items-center gap-2 mb-3">
+				<h2 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-calendar-days text-blue-600"></i> Reminders</h2>
+				<a href="/calendar" class="ml-auto text-sm text-blue-600 hover:underline">Open full calendar →</a>
+			</div>
 			<div id="reminderMonthNav" class="flex items-center justify-between mb-2">
 				<button type="button" id="calPrev" class="px-2 py-1 rounded border bg-white hover:bg-gray-50" aria-label="Previous Month">◀</button>
 				<div id="calLabel" class="font-semibold flex-1 text-center"></div>
@@ -170,25 +173,6 @@ window.REMINDERS_CAL_START = (function(){
 			<div class="flex justify-end mb-2"><button id="backToToday" type="button" class="hidden text-xs text-blue-600 hover:underline">Back to Today</button></div>
 			<div id="reminderWeekdayRow" class="grid grid-cols-7 gap-1 text-xs font-semibold text-gray-600 mb-1"></div>
 			<div id="calendar" class="grid grid-cols-7 gap-1 mb-4"></div>
-			{% if uses_firebase and config.get('google_calendar', {}).get('enabled') %}
-			<div id="calendarConnectBanner" class="hidden mb-2 p-2 rounded border border-blue-200 bg-blue-50 dark:bg-slate-800 text-sm flex flex-wrap items-center gap-2">
-				<span>Connect Google Calendar to sync family events.</span>
-				<a href="/auth/google/calendar/start" class="btn btn-primary text-xs py-1">Connect Google Calendar</a>
-			</div>
-			<details id="calendarManagerPanel" class="mb-3 border rounded p-2 text-sm bg-white dark:bg-slate-800">
-				<summary class="cursor-pointer font-semibold">Google Calendars</summary>
-				<div id="calendarManagerBody" class="mt-2 space-y-2">
-					<div class="flex flex-wrap gap-2 items-center">
-						<button type="button" id="calendarSyncNow" class="px-2 py-1 text-xs rounded border bg-white hover:bg-gray-50">Sync now</button>
-						<span id="calendarLastSync" class="text-xs text-gray-500"></span>
-					</div>
-					<div id="calendarOwnList" class="space-y-2"></div>
-					<div id="calendarVisibleList" class="space-y-1"></div>
-					<label class="block text-xs font-semibold mt-2">Default write calendar</label>
-					<select id="defaultWriteCalendarSelect" class="h-9 w-full border rounded p-1 text-sm"></select>
-				</div>
-			</details>
-			{% endif %}
 			<div class="flex items-center flex-wrap gap-2 mb-2" id="remindersHeader">
 				<button type="button" id="openAdd" class="btn btn-primary text-sm">Add Reminder</button>
 				<div class="text-sm text-gray-600" id="remindersSelectedDate"></div>
@@ -240,11 +224,6 @@ window.REMINDERS_CAL_START = (function(){
 							<label class="text-xs text-gray-700 self-center">till</label>
 							<input name="rec_end_date" type="date" class="h-10 w-full border rounded p-2 text-sm" placeholder="End date (optional)" aria-label="End date (optional)">
 						</div>
-					</div>
-					<div id="writeCalendarRow" class="hidden">
-						<label class="block text-xs font-semibold mb-1" for="writeCalendarSelect">Save to calendar</label>
-						<select id="writeCalendarSelect" class="h-10 w-full border rounded p-2 text-sm"></select>
-						<p id="writeCalendarHint" class="text-[11px] text-gray-500 mt-1"></p>
 					</div>
 					<div>
 						<label class="block text-xs font-semibold mb-1">Description</label>

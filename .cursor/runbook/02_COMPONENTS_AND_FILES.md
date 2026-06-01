@@ -49,7 +49,8 @@ All routes attach to **`main_bp`** (`blueprints/__init__.py`) — endpoint names
 |------|-----------------|--------|
 | `__init__.py` | `/manifest.webmanifest`, `/sw.js` | PWA |
 | `auth.py` | `/login`, `/auth/*`, global `before_app_request` | Auth gate |
-| `dashboard.py` | `/`, `/api/reminders*`, `/calendar/*`, `/notice`, `/whoishome`, `/status/*` | Home, reminders, presence |
+| `dashboard.py` | `/`, `/api/reminders*`, `/notice`, `/whoishome`, `/status/*` | Home, reminders API, presence |
+| `calendar_page.py` | `/calendar` | Full calendar UI (month/week/agenda + Google setup) |
 | `calendar_sync.py` | `/auth/google/calendar/*`, `/api/calendar/*` | Google OAuth + calendar settings/sync |
 | `notes.py` | `/notes` | Shared notes |
 | `uploads.py` | `/upload`, `/uploads/*` | Shared cloud |
@@ -70,7 +71,8 @@ Side-effect imports: `app/__init__.py` imports each blueprint module so decorato
 | Template | Feature |
 |----------|---------|
 | `base.html` | Layout, sidebar (feature toggles), theme vars, SW registration |
-| `index.html` | Dashboard: notice, calendar, who's home, weather slot |
+| `index.html` | Dashboard: notice, compact reminders widget, who's home, weather slot |
+| `calendar.html` | Full calendar: views, event editor, Google setup tab |
 | `login.html` | Legacy password or Firebase |
 | `notes.html`, `shopping.html`, `chores.html`, … | One per feature area |
 
@@ -81,7 +83,10 @@ Shared partial: `_flash.html`.
 | Path | Role |
 |------|------|
 | `input.css` / `output.css` | Tailwind source / built CSS |
-| `js/reminders_api.js` | Calendar CRUD client |
+| `js/reminders_api.js` | Reminders + `/api/calendar/*` fetch helpers |
+| `js/color_picker.js` | Native color + hex field (`homehubColorPicker`) |
+| `js/calendar_app.js` | `/calendar`: month, week time-grid, agenda, lanes, drag-reschedule, recurring |
+| `js/calendar_sync.js` | Google connect UI, per-calendar lane color picker, write target |
 | `js/weather.js` | Open-Meteo client |
 | `js/firebase-auth.js` | Google sign-in flow |
 | `js/tags.js`, `form_tags.js` | Tag UI for shopping/chores/recipes |

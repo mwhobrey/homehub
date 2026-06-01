@@ -114,6 +114,7 @@
             </div>
             <nav class="flex-1 p-4 space-y-2 overflow-y-auto" id="sidebarNav">
                 <a href="/" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Welcome"><i class="fa-solid fa-house w-5 text-center"></i><span class="nav-label">Welcome</span></a>
+                {% if config.feature_toggles.get('calendar', True) %}<a href="/calendar" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Calendar"><i class="fa-solid fa-calendar-days w-5 text-center"></i><span class="nav-label">Calendar</span></a>{% endif %}
                 {% if config.feature_toggles.get('notes') %}<a href="/notes" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shared Notes"><i class="fa-solid fa-note-sticky w-5 text-center"></i><span class="nav-label">Shared Notes</span></a>{% endif %}
                 {% if config.feature_toggles.get('shared_cloud') %}<a href="/upload" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shared Cloud"><i class="fa-solid fa-cloud w-5 text-center"></i><span class="nav-label">Shared Cloud</span></a>{% endif %}
                 {% if config.feature_toggles.get('shopping_list') %}<a href="/shopping" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shopping List"><i class="fa-solid fa-cart-shopping w-5 text-center"></i><span class="nav-label">Shopping List</span></a>{% endif %}
@@ -368,7 +369,7 @@
     
 </body>
 <script src="/static/js/reminders_api.js"></script>
-{% if uses_firebase and config.get('google_calendar', {}).get('enabled') %}<script src="/static/js/calendar_sync.js"></script>{% endif %}
+{% block extra_scripts %}{% endblock %}
 <script>
 // Register Service Worker for PWA
 (function(){

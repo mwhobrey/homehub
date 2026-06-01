@@ -9,7 +9,7 @@ from flask import current_app
 from ..models import CalendarSyncOutbox, LinkedCalendar, Reminder, db
 from .acl import get_connection_for_uid, owns_linked_calendar
 from .client import get_calendar_service
-from .mapper import reminder_to_google_event
+from .mapper import event_to_reminder_fields, recurring_rule_to_google_event, reminder_to_google_event
 
 
 def _enqueue(reminder_id: int, operation: str, payload: dict | None = None) -> None:
@@ -137,6 +137,109 @@ def push_reminder_move(
         current_app.logger.exception('google move failed; trying update only')
         reminder.linked_calendar_id = to_lc.id
         return push_reminder_update(reminder, to_lc)
+
+
+def fetch_google_event(reminder: Reminder, lc: LinkedCalendar) -> dict | None:
+    if not reminder.google_event_id or not lc.connection:
+        return None
+    try:
+        service = get_calendar_service(lc.connection)
+        return (
+            service.events()
+            .get(calendarId=lc.google_calendar_id, eventId=reminder.google_event_id)
+            .execute()
+        )
+    except Exception:
+        current_app.logger.exception('fetch google event failed')
+        return None
+
+
+def apply_google_event_to_reminder(reminder: Reminder, lc: LinkedCalendar) -> bool:
+    event = fetch_google_event(reminder, lc)
+    if not event:
+        return False
+    tz = lc.connection.time_zone or 'UTC'
+    fields = event_to_reminder_fields(event, tz)
+    for k, v in fields.items():
+        if k.startswith('google_') or k in (
+            'title', 'description', 'date', 'time', 'all_day', 'source',
+            'end_date', 'end_time', 'time_zone', 'attendees_json',
+        ):
+            setattr(reminder, k, v)
+    reminder.sync_status = 'synced'
+    db.session.commit()
+    return True
+
+
+def push_recurring_create(rr, lc: LinkedCalendar) -> bool:
+    conn = lc.connection
+    if not conn:
+        return False
+    try:
+        service = get_calendar_service(conn)
+        tz = conn.time_zone or 'UTC'
+        body = recurring_rule_to_google_event(rr, tz)
+        created = (
+            service.events()
+            .insert(calendarId=lc.google_calendar_id, body=body)
+            .execute()
+        )
+        rr.google_recurring_event_id = created.get('id')
+        rr.google_etag = created.get('etag')
+        rr.linked_calendar_id = lc.id
+        rr.owner_uid = conn.firebase_uid
+        rr.source = 'google'
+        rr.sync_status = 'synced'
+        db.session.commit()
+        return True
+    except Exception:
+        current_app.logger.exception('google push recurring create failed')
+        rr.sync_status = 'pending_push'
+        db.session.commit()
+        return False
+
+
+def push_recurring_update(rr, lc: LinkedCalendar) -> bool:
+    conn = lc.connection
+    if not conn or not rr.google_recurring_event_id:
+        return push_recurring_create(rr, lc)
+    try:
+        service = get_calendar_service(conn)
+        tz = conn.time_zone or 'UTC'
+        body = recurring_rule_to_google_event(rr, tz)
+        updated = (
+            service.events()
+            .update(
+                calendarId=lc.google_calendar_id,
+                eventId=rr.google_recurring_event_id,
+                body=body,
+            )
+            .execute()
+        )
+        rr.google_etag = updated.get('etag')
+        rr.sync_status = 'synced'
+        db.session.commit()
+        return True
+    except Exception:
+        current_app.logger.exception('google push recurring update failed')
+        rr.sync_status = 'pending_push'
+        db.session.commit()
+        return False
+
+
+def push_recurring_delete(rr, lc: LinkedCalendar) -> bool:
+    if not rr.google_recurring_event_id or not lc.connection:
+        return True
+    try:
+        service = get_calendar_service(lc.connection)
+        service.events().delete(
+            calendarId=lc.google_calendar_id,
+            eventId=rr.google_recurring_event_id,
+        ).execute()
+        return True
+    except Exception:
+        current_app.logger.exception('google push recurring delete failed')
+        return False
 
 
 def process_outbox_for_connection(conn_id: int, limit: int = 50) -> None:

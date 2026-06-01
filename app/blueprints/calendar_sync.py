@@ -278,6 +278,16 @@ def api_calendar_patch(lc_id):
             lc.visibility = vis
     if payload.get('set_default'):
         conn.default_linked_calendar_id = lc.id
+    if 'background_color' in payload:
+        from ..security import normalize_hex_color
+
+        hc = normalize_hex_color(payload.get('background_color'))
+        if hc:
+            lc.background_color = hc
+        elif payload.get('background_color') in (None, ''):
+            pass
+        else:
+            return jsonify({'ok': False, 'error': 'Invalid color'}), 400
     db.session.commit()
     return jsonify({'ok': True, 'calendar': _serialize_linked(lc, uid, conn)})
 

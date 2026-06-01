@@ -77,6 +77,22 @@ def sanitize_text(value: str) -> str:
     return bleach.clean(value or "", strip=True).strip()
 
 
+def normalize_hex_color(value) -> str | None:
+    """Return #RRGGBB or None if invalid. Accepts #RGB, #RRGGBB, or bare hex."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.startswith('#'):
+        raw = raw[1:]
+    if len(raw) == 3 and all(c in '0123456789abcdefABCDEF' for c in raw):
+        raw = ''.join(c * 2 for c in raw)
+    if len(raw) != 6 or not all(c in '0123456789abcdefABCDEF' for c in raw):
+        return None
+    return f'#{raw.lower()}'
+
+
 def safe_local_redirect_path(path: str | None) -> str | None:
     """Allow only same-site relative redirects (blocks open redirects)."""
     if not path:

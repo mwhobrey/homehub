@@ -12,7 +12,7 @@
   const ownList = document.getElementById('calendarOwnList');
   const visibleList = document.getElementById('calendarVisibleList');
   const lastSyncEl = document.getElementById('calendarLastSync');
-  const syncBtn = document.getElementById('calendarSyncNow');
+  const syncBtn = document.getElementById('calendarSyncNow') || document.getElementById('calSyncNow');
 
   let writableCalendars = [];
 
@@ -91,6 +91,24 @@
           loadManager();
         });
       });
+      if (window.homehubColorPicker) {
+        const colorMount = document.createElement('div');
+        colorMount.className = 'mt-1';
+        window.homehubColorPicker.mount(colorMount, {
+          value: cal.background_color || '#2563eb',
+          label: 'Lane color',
+          onChange(hex) {
+            if (!hex) return;
+            window.calendarSyncApi.patchCalendar(cal.id, { background_color: hex }).then(() => {
+              loadManager();
+              if (window.homehubCalendarApp && window.homehubCalendarApp.onCalendarsUpdated) {
+                window.homehubCalendarApp.onCalendarsUpdated();
+              }
+            });
+          },
+        });
+        div.appendChild(colorMount);
+      }
       div.appendChild(vis);
       div.appendChild(syncLbl);
       div.appendChild(defBtn);
@@ -135,6 +153,9 @@
       (data.visible || []).forEach((c) => visibleList.appendChild(renderCalendarRow(c, false)));
     }
     await loadWritable();
+    if (window.homehubCalendarApp && window.homehubCalendarApp.onCalendarsUpdated) {
+      await window.homehubCalendarApp.onCalendarsUpdated();
+    }
   }
 
   if (writeSelect) {
@@ -152,7 +173,9 @@
       syncBtn.disabled = true;
       await window.calendarSyncApi.syncNow();
       await loadManager();
-      if (typeof fetchMonth === 'function' && typeof getSelectedDate === 'function') {
+      if (window.homehubCalendarApp && typeof window.homehubCalendarApp.reload === 'function') {
+        await window.homehubCalendarApp.reload();
+      } else if (typeof fetchMonth === 'function' && typeof getSelectedDate === 'function') {
         await fetchMonth(getSelectedDate(), true);
         if (typeof updateCalendarBadges === 'function') updateCalendarBadges();
         if (typeof renderList === 'function') renderList();
