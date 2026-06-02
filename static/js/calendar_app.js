@@ -2,6 +2,16 @@
  * Full calendar: month / week time-grid / agenda, lanes, drag-reschedule, recurring, colors.
  */
 (function () {
+  function uiError(msg) {
+    if (window.globalToast) window.globalToast(msg, 'error');
+    else if (window.homehubDialog?.alert) window.homehubDialog.alert(msg, { title: 'Error' });
+    else window.alert(msg);
+  }
+
+  async function uiConfirm(msg, opts) {
+    if (window.homehubDialog?.confirm) return window.homehubDialog.confirm(msg, opts || {});
+    return window.confirm(msg);
+  }
   const START_DAY = (window.REMINDERS_CAL_START || 'sunday').toLowerCase();
   const TIME_FMT = window.REMINDERS_TIME_FORMAT || '12h';
   const HOUR_PX = 48;
@@ -287,7 +297,7 @@
         creator,
       });
       if (!res.ok) {
-        alert(res.error || 'Could not move occurrence');
+        uiError(res.error || 'Could not move occurrence');
         return false;
       }
       await loadEvents();
@@ -296,7 +306,7 @@
     const payload = { ...patch, creator, occurrence_scope: scope || undefined };
     const res = await window.remindersApi.update(ev.id, payload);
     if (!res.ok) {
-      alert(res.error || 'Could not move event');
+      uiError(res.error || 'Could not move event');
       return false;
     }
     await loadEvents();
@@ -318,7 +328,7 @@
     const creator = localStorage.getItem('username') || '';
     const res = await window.remindersApi.update(ev.id, { ...patch, creator });
     if (!res.ok) {
-      alert(res.error || 'Could not move event');
+      uiError(res.error || 'Could not move event');
       return false;
     }
     await loadEvents();
@@ -441,7 +451,8 @@
     const col = eventColor(e);
     const tc = eventTextColor(e);
     const conflict = e.sync_status === 'conflict' ? ' ring-2 ring-amber-400' : '';
-    return `<div class="cal-event-chip ${extraClass || ''}${conflict}" data-ev-id="${e.id}" style="background:${col};color:${tc}" title="${escapeHtml(e.title)}">${escapeHtml(e.title)}</div>`;
+    const importedBadge = e.source === 'google' ? ' <span class="text-[9px] opacity-90">(imported)</span>' : '';
+    return `<div class="cal-event-chip ${extraClass || ''}${conflict}" data-ev-id="${e.id}" style="background:${col};color:${tc}" title="${escapeHtml(e.title)}">${escapeHtml(e.title)}${importedBadge}</div>`;
   }
 
   function renderMonth() {
@@ -612,7 +623,7 @@
       const col = eventColor(e);
       html += `<button type="button" class="w-full text-left flex gap-2 items-start p-2 rounded border hover:bg-gray-50 dark:hover:bg-slate-800" data-edit="${e.id}">
         <span class="w-2 h-2 rounded-full mt-1 flex-shrink-0" style="background:${col}"></span>
-        <span><span class="font-semibold text-sm">${escapeHtml(e.title)}</span>${e.sync_status === 'conflict' ? ' <span class="text-amber-600 text-[10px]">sync conflict</span>' : ''}<br><span class="text-xs text-gray-500">${escapeHtml(range)}</span></span>
+        <span><span class="font-semibold text-sm">${escapeHtml(e.title)}</span>${e.source === 'google' ? ' <span class="text-[10px] text-blue-600">imported</span>' : ''}${e.sync_status === 'conflict' ? ' <span class="text-amber-600 text-[10px]">sync conflict</span>' : ''}<br><span class="text-xs text-gray-500">${escapeHtml(range)}</span></span>
       </button>`;
     });
     agendaView.innerHTML = html;
@@ -639,7 +650,7 @@
         return `<div class="flex items-center justify-between gap-2 p-2 rounded border text-xs">
           <button type="button" class="text-left flex-1 flex gap-2 items-start" data-edit="${e.id}">
             <span class="w-2 h-2 rounded-full mt-1 flex-shrink-0" style="background:${col}"></span>
-            <span><strong>${escapeHtml(e.title)}</strong><br><span class="text-gray-500">${escapeHtml(meta)}</span></span>
+            <span><strong>${escapeHtml(e.title)}</strong>${e.source === 'google' ? ' <span class="text-[10px] text-blue-600">imported</span>' : ''}<br><span class="text-gray-500">${escapeHtml(meta)}</span></span>
           </button>
           <button type="button" class="text-red-600" data-del="${e.id}" title="Delete">✕</button>
         </div>`;
@@ -655,7 +666,7 @@
     dayList.querySelectorAll('[data-del]').forEach((b) => {
       b.addEventListener('click', async () => {
         const id = parseInt(b.getAttribute('data-del'), 10);
-        if (!id || id < 0 || !confirm('Delete this event?')) return;
+        if (!id || id < 0 || !(await uiConfirm('Delete this event?', { title: 'Delete Event', okText: 'Delete', cancelText: 'Cancel' }))) return;
         await window.remindersApi.removeMany([id], localStorage.getItem('username') || '');
         await loadEvents();
       });
@@ -859,10 +870,14 @@
       if (window.homehubCalendarSync) {
         const wcid = window.homehubCalendarSync.getWriteCalendarId();
         if (wcid) payload.linked_calendar_id = wcid;
+        const pcid = window.homehubCalendarSync.getPersonalCalendarId
+          ? window.homehubCalendarSync.getPersonalCalendarId()
+          : null;
+        if (pcid) payload.personal_calendar_id = pcid;
       }
       const res = await window.remindersApi.create(payload);
       if (!res.ok) {
-        alert(res.error || 'Save failed');
+        uiError(res.error || 'Save failed');
         return;
       }
       hideForm();
@@ -887,7 +902,7 @@
           : (fd.get('rec_end_date') || null),
       });
       if (!res.ok) {
-        alert(res.error || 'Save failed');
+        uiError(res.error || 'Save failed');
         return;
       }
       hideForm();
@@ -915,12 +930,16 @@
     if (window.homehubCalendarSync) {
       const wcid = window.homehubCalendarSync.getWriteCalendarId();
       if (wcid) payload.linked_calendar_id = wcid;
+      const pcid = window.homehubCalendarSync.getPersonalCalendarId
+        ? window.homehubCalendarSync.getPersonalCalendarId()
+        : null;
+      if (pcid) payload.personal_calendar_id = pcid;
     }
     let res;
     if (editingId) res = await window.remindersApi.update(editingId, { ...payload, creator });
     else res = await window.remindersApi.create({ ...payload, creator });
     if (!res.ok) {
-      alert(res.error || 'Save failed');
+      uiError(res.error || 'Save failed');
       return;
     }
     hideForm();
@@ -953,11 +972,16 @@
     });
   });
 
+  function activateSideTab(tabName) {
+    const tab = document.querySelector(`.cal-side-tab[data-tab="${tabName}"]`);
+    if (tab) tab.click();
+  }
+
   $('calConflictLocal')?.addEventListener('click', async () => {
     const id = parseInt(conflictPanel?.dataset.conflictId || '0', 10);
     if (!id) return;
     const res = await window.remindersApi.resolveConflict(id, 'local');
-    if (!res.ok) alert(res.error || 'Resolve failed');
+    if (!res.ok) uiError(res.error || 'Resolve failed');
     else {
       hideForm();
       await loadEvents();
@@ -967,7 +991,7 @@
     const id = parseInt(conflictPanel?.dataset.conflictId || '0', 10);
     if (!id) return;
     const res = await window.remindersApi.resolveConflict(id, 'google');
-    if (!res.ok) alert(res.error || 'Resolve failed');
+    if (!res.ok) uiError(res.error || 'Resolve failed');
     else {
       hideForm();
       await loadEvents();
@@ -1030,6 +1054,20 @@
   }
 
   renderWeekdayHeaders();
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const shouldOpenSetup =
+      params.get('calendar_connected') === '1' ||
+      params.get('calendar_error') !== null ||
+      params.get('connect_calendar') === '1' ||
+      sessionStorage.getItem('calendar:openSetupTab') === '1';
+    if (shouldOpenSetup) {
+      activateSideTab('setup');
+      sessionStorage.removeItem('calendar:openSetupTab');
+    }
+  } catch (_) {
+    // no-op
+  }
   selectDay(selectedYmd);
   (async () => {
     await loadCategories();

@@ -5,7 +5,7 @@ from .config import load_config, apply_config_defaults
 from .extensions import limiter
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 db = SQLAlchemy()
 
@@ -126,7 +126,11 @@ def create_app(test_config: dict | None = None):
                 conn = sqlite3.connect(db_path)
                 cur = conn.cursor()
                 # Import models to get actual table names
-                from .models import RecurringExpense as _RecurringExpense, QRCode as _QRCode, Reminder as _Reminder  # noqa: F401
+                from .models import (
+                    RecurringExpense as _RecurringExpense,
+                    QRCode as _QRCode,
+                    Reminder as _Reminder,
+                )  # noqa: F401
                 # Helper to check column existence
                 def has_column(table, column):
                     cur.execute(f"PRAGMA table_info({table})")
@@ -195,6 +199,7 @@ def create_app(test_config: dict | None = None):
                 ensure_column(_Reminder.__tablename__, 'end_time', 'TEXT', None)
                 ensure_column(_Reminder.__tablename__, 'time_zone', 'TEXT', None)
                 ensure_column(_Reminder.__tablename__, 'attendees_json', 'TEXT', None)
+                ensure_column(_Reminder.__tablename__, 'personal_calendar_id', 'INTEGER', None)
                 ensure_column('recurring_reminder', 'exception_dates_json', 'TEXT', None)
                 ensure_column('recurring_reminder', 'linked_calendar_id', 'INTEGER', None)
                 ensure_column('recurring_reminder', 'google_recurring_event_id', 'TEXT', None)
@@ -202,6 +207,8 @@ def create_app(test_config: dict | None = None):
                 ensure_column('recurring_reminder', 'owner_uid', 'TEXT', None)
                 ensure_column('recurring_reminder', 'source', 'TEXT', 'local')
                 ensure_column('recurring_reminder', 'sync_status', 'TEXT', 'synced')
+                ensure_column('recurring_reminder', 'personal_calendar_id', 'INTEGER', None)
+                ensure_column('calendar_connection', 'sync_mode', 'TEXT', 'import_only')
                 # Add 'tags' to recipe for multi-tag feature
                 if not has_column('recipe', 'tags'):
                     cur.execute("ALTER TABLE recipe ADD COLUMN tags TEXT DEFAULT '[]'")
@@ -244,6 +251,82 @@ def create_app(test_config: dict | None = None):
                 # Add new interval/unit columns if missing and backfill defaults
                 ensure_column('recurring_reminder', 'interval', 'INTEGER', 1)
                 ensure_column('recurring_reminder', 'unit', 'TEXT', 'day')
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS personal_calendar (
+                    id INTEGER PRIMARY KEY,
+                    owner_uid TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    color TEXT,
+                    visibility TEXT DEFAULT 'private',
+                    archived INTEGER DEFAULT 0,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_personal_calendar_owner_uid ON personal_calendar(owner_uid)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS calendar_import_profile (
+                    id INTEGER PRIMARY KEY,
+                    connection_id INTEGER NOT NULL UNIQUE,
+                    default_sync_mode TEXT DEFAULT 'import_only',
+                    require_mapping_review INTEGER DEFAULT 1,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+                """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS calendar_import_mapping (
+                    id INTEGER PRIMARY KEY,
+                    connection_id INTEGER NOT NULL,
+                    linked_calendar_id INTEGER NOT NULL,
+                    personal_calendar_id INTEGER NOT NULL,
+                    import_enabled INTEGER DEFAULT 1,
+                    import_color TEXT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_calendar_import_mapping_connection_id ON calendar_import_mapping(connection_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_calendar_import_mapping_linked_calendar_id ON calendar_import_mapping(linked_calendar_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_calendar_import_mapping_personal_calendar_id ON calendar_import_mapping(personal_calendar_id)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS category_import_mapping (
+                    id INTEGER PRIMARY KEY,
+                    connection_id INTEGER NOT NULL,
+                    linked_calendar_id INTEGER NOT NULL,
+                    source_key TEXT NOT NULL,
+                    source_label TEXT,
+                    target_key TEXT,
+                    target_label TEXT,
+                    target_color TEXT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    UNIQUE(connection_id, linked_calendar_id, source_key)
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_category_import_mapping_connection_id ON category_import_mapping(connection_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_category_import_mapping_linked_calendar_id ON category_import_mapping(linked_calendar_id)")
+                now = datetime.utcnow().isoformat(sep=' ')
+                cur.execute("SELECT firebase_uid FROM calendar_connection WHERE firebase_uid IS NOT NULL AND TRIM(firebase_uid) != ''")
+                for (owner_uid,) in cur.fetchall():
+                    cur.execute("SELECT id FROM personal_calendar WHERE owner_uid=? ORDER BY id ASC LIMIT 1", (owner_uid,))
+                    row = cur.fetchone()
+                    if row:
+                        personal_id = row[0]
+                    else:
+                        cur.execute(
+                            "INSERT INTO personal_calendar(owner_uid, name, color, visibility, archived, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
+                            (owner_uid, 'My Calendar', '#2563eb', 'private', 0, now, now),
+                        )
+                        personal_id = cur.lastrowid
+                    cur.execute(
+                        "UPDATE reminder SET personal_calendar_id=? WHERE owner_uid=? AND personal_calendar_id IS NULL",
+                        (personal_id, owner_uid),
+                    )
+                    cur.execute(
+                        "UPDATE recurring_reminder SET personal_calendar_id=? WHERE owner_uid=? AND personal_calendar_id IS NULL",
+                        (personal_id, owner_uid),
+                    )
                 # Backfill unit from legacy frequency when null
                 try:
                     cur.execute("UPDATE recurring_reminder SET unit='day' WHERE (unit IS NULL OR unit='') AND frequency='daily'")
@@ -308,6 +391,7 @@ def create_app(test_config: dict | None = None):
             'uses_firebase': uses_firebase(),
             'current_user_name': current_display_name(),
             'current_user_is_admin': is_admin(),
+            'asset_version': os.environ.get('SW_CACHE_VERSION', 'dev'),
         }
     
     # Add Jinja2 filter for JSON parsing

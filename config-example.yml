@@ -80,7 +80,14 @@ google_calendar:
   client_secret: ""   # or set GOOGLE_CALENDAR_CLIENT_SECRET env
   sync_interval_minutes: 15
   default_timezone: "America/Chicago"
+  # Optional: pin callback base URL if proxy/host headers vary.
+  # Example: "http://localhost:5000" or "https://home.yourdomain.com"
+  redirect_base_url: ""
+  default_sync_mode: "import_only"
+  allow_bidirectional_opt_in: true
   onboarding_all_calendars_enabled: true
+  import:
+    require_mapping_review: true
 
 reminders:
   # time_format controls how reminder times are displayed in the UI.

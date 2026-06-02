@@ -1,6 +1,6 @@
 # Google Calendar sync — operator & family setup guide
 
-This guide covers everything you must do **outside the codebase** to turn on bidirectional Google Calendar sync in HomeHub. Use it alongside [DEPLOY.md](./DEPLOY.md) (Firebase + TLS).
+This guide covers everything you must do **outside the codebase** to turn on Google Calendar import/sync in HomeHub. Use it alongside [DEPLOY.md](./DEPLOY.md) (Firebase + TLS).
 
 **Code reference:** sync is enabled when `auth.mode: firebase` and `google_calendar.enabled: true`. Implementation lives under `app/google_calendar/` and `app/blueprints/calendar_sync.py`.
 
@@ -61,8 +61,8 @@ Use the **same GCP project as Firebase** when possible.
 
 **Scopes**
 
-- Add (or verify): `https://www.googleapis.com/auth/calendar`  
-  (Full read/write — required for bidirectional sync.)
+- Add (or verify): `https://www.googleapis.com/auth/calendar`.
+  HomeHub defaults to import-only mode; bidirectional write-back is an explicit opt-in in Setup.
 
 **Test users (while app status is “Testing”)**
 
@@ -157,7 +157,11 @@ google_calendar:
   client_secret: ""   # prefer environment variable (below)
   sync_interval_minutes: 15
   default_timezone: "America/Chicago"
+  default_sync_mode: "import_only"
+  allow_bidirectional_opt_in: true
   onboarding_all_calendars_enabled: true
+  import:
+    require_mapping_review: true
 ```
 
 **Secrets (recommended for production)**
@@ -203,17 +207,18 @@ Each person on `allowed_emails` should complete these steps **once**, with **the
    - Click **Connect Google Calendar**, or
    - Visit `/auth/google/calendar/start` while logged in.
 3. Approve Google calendar access on the consent screen.
-4. After redirect, open **Google Calendars** (collapsible panel):
-   - Confirm calendars appear.
-   - Set **Default write calendar** (where new events go by default).
-   - Toggle **Sync** per calendar.
-   - Set **Visibility**: `private`, `household`, or `custom`.
+4. After redirect, open **Calendar Setup** and run the import wizard:
+   - Select source Google calendars.
+   - For each source, choose destination HomeHub personal calendar (new or existing).
+   - Set import color and optional category mappings.
+   - Review summary and import.
+5. Leave sync mode at **Import only** unless you intentionally want write-back.
 5. Click **Sync now** and confirm events show on the calendar grid.
 
 **Creating/editing reminders**
 
-- **Save to calendar** dropdown defaults to your default calendar; pick another owned calendar per save if needed.
-- Events push to Google when you have an active connection.
+- **HomeHub calendar** dropdown controls where local items are stored.
+- Google write-back happens only when sync mode is switched to **Bidirectional**.
 
 ---
 
@@ -259,11 +264,13 @@ Content-Type: application/json
 
 Run as Parent A, Parent B, and Teen (if applicable):
 
-- [ ] Connect → calendars import; primary is default write target.
+- [ ] Connect → import wizard shows source calendars and destination HomeHub calendars.
+- [ ] Import selected calendars to one shared HomeHub calendar and verify items land correctly.
+- [ ] Override category label/color during import and verify imported events match mapping.
 - [ ] “Adults” calendar **private** → teen does not see events.
 - [ ] Parent B hides “Work” via display filter → hidden for B only.
-- [ ] Create on default calendar → appears in HomeHub and Google Calendar app.
-- [ ] Create on “School” via dropdown → correct Google calendar.
+- [ ] In import-only mode, local create/edit stays local (no Google write-back).
+- [ ] After switching to bidirectional mode, local create/edit writes to Google.
 - [ ] Edit → change **Save to calendar** → event moves in Google.
 - [ ] Edit in Google → **Sync now** (or wait `sync_interval_minutes`) → HomeHub updates.
 - [ ] Edit/delete in HomeHub → Google updates.

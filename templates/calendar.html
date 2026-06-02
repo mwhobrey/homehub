@@ -14,6 +14,39 @@
   .cal-resize-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; opacity: 0.7; }
   .cal-week-event.conflict { box-shadow: 0 0 0 2px #f59e0b; }
   .cal-week-slot-drop { position: absolute; left: 0; right: 0; height: 48px; z-index: 1; }
+  #calendarImportModal::backdrop {
+    background: rgba(15, 23, 42, 0.68);
+    backdrop-filter: blur(3px);
+  }
+  #calendarImportModal {
+    color: #0f172a;
+  }
+  [data-theme="dark"] #calendarImportModal {
+    color: #e2e8f0;
+  }
+  #calendarImportModal h3,
+  #calendarImportModal p,
+  #calendarImportModal label,
+  #calendarImportModal span,
+  #calendarImportModal button {
+    color: inherit;
+  }
+  #calendarImportModal [data-step-pill]:not(.bg-blue-600) {
+    color: #334155;
+    border-color: #cbd5e1;
+  }
+  [data-theme="dark"] #calendarImportModal [data-step-pill]:not(.bg-blue-600) {
+    color: #cbd5e1;
+    border-color: #475569;
+  }
+  #calendarImportModal input:not([type="color"]):not([type="checkbox"]) {
+    color: #0f172a;
+    background: #ffffff;
+  }
+  [data-theme="dark"] #calendarImportModal input:not([type="color"]):not([type="checkbox"]) {
+    color: #e2e8f0;
+    background: #0f172a;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -97,6 +130,11 @@
               <p id="writeCalendarHint" class="text-[11px] text-gray-500 mt-1"></p>
             </div>
             {% endif %}
+            <div id="personalCalendarRow">
+              <label class="block text-xs font-semibold mb-1" for="personalCalendarSelect">HomeHub calendar</label>
+              <select id="personalCalendarSelect" class="w-full h-9 border rounded px-2"></select>
+              <p class="text-[11px] text-gray-500 mt-1">Imported events are routed into this HomeHub calendar.</p>
+            </div>
             <div>
               <label class="block text-xs font-semibold mb-1">Category</label>
               <select name="category" id="calCategorySelect" class="w-full h-9 border rounded px-2">
@@ -167,14 +205,14 @@
           <div id="calDayList" class="mt-4 space-y-2 max-h-64 overflow-auto border-t pt-3"></div>
         </div>
 
-        <div id="calSideSetup" class="hidden text-sm space-y-3">
-          <div id="calCategorySetup" class="space-y-2 pb-3 border-b">
-            <p class="text-xs font-semibold text-gray-700 dark:text-gray-200">Event categories</p>
-            <p class="text-[10px] text-gray-500">Color-code local events. Changes apply on the dashboard reminders widget too.</p>
+        <div id="calSideSetup" class="hidden text-sm space-y-4">
+          <div id="calCategorySetup" class="space-y-2 pb-4 border-b border-gray-200 dark:border-slate-700">
+            <p class="text-xs font-semibold tracking-wide uppercase text-gray-600 dark:text-gray-300">Event categories</p>
+            <p class="text-[11px] text-gray-500">Color-code local events. Changes also apply on the dashboard reminders widget.</p>
             <div id="calCategoryManager" class="space-y-2"></div>
           </div>
           {% if google_calendar_enabled %}
-          <div id="calendarConnectBanner" class="p-2 rounded border border-blue-200 bg-blue-50 dark:bg-slate-800 text-xs space-y-2">
+          <div id="calendarConnectBanner" class="p-3 rounded-lg border border-blue-200 bg-blue-50/70 dark:bg-slate-800 text-xs space-y-2">
             <p id="calendarConnectBannerText">Connect Google Calendar to sync household schedules.</p>
             <div class="flex flex-wrap gap-2">
               <a href="/auth/google/calendar/start" class="btn btn-primary text-xs py-1 inline-block">Connect Google</a>
@@ -183,11 +221,26 @@
               </button>
             </div>
           </div>
-          <div id="calendarConnectedPanel" class="hidden space-y-2">
+          <div id="calendarConnectedPanel" class="hidden space-y-2 p-2 rounded-lg border border-gray-200 dark:border-slate-700">
             <p id="calendarLastSync" class="text-xs text-gray-500"></p>
+            <label class="text-xs inline-flex items-center gap-2">
+              <span>Sync mode</span>
+              <select id="calendarSyncModeSelect" class="h-8 border rounded px-2">
+                <option value="import_only">Import only</option>
+                <option value="bidirectional">Bidirectional</option>
+              </select>
+            </label>
             <button type="button" id="calDisconnectConnected" class="px-3 py-1.5 text-xs rounded border border-red-300 text-red-700 hover:bg-red-50 dark:hover:bg-red-950">
               Disconnect Google
             </button>
+          </div>
+          <div id="calendarImportWizard" class="space-y-2 border rounded-lg p-3 bg-white/60 dark:bg-slate-900/40">
+            <p class="text-xs font-semibold tracking-wide uppercase text-gray-600 dark:text-gray-300">Import wizard</p>
+            <p class="text-[11px] text-gray-500">Launch a guided import for selected Google calendars.</p>
+            <div class="flex gap-2">
+              <button type="button" id="calendarImportOpen" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white">Open Import Wizard</button>
+            </div>
+            <p id="calendarImportSummary" class="text-[11px] text-gray-500"></p>
           </div>
           <div>
             <label class="block text-xs font-semibold mb-1">Default write calendar</label>
@@ -214,6 +267,42 @@
   </div>
 </dialog>
 
+<dialog id="calendarImportModal" class="rounded-2xl p-0 shadow-2xl border w-[95vw] max-w-4xl bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700">
+  <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+    <div>
+      <h3 class="text-sm font-semibold">Google Calendar Import Wizard</h3>
+      <p class="text-xs text-gray-500 dark:text-gray-400" id="calendarImportStepLabel">Step 1 of 2</p>
+    </div>
+    <button type="button" id="calendarImportClose" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white text-lg leading-none">&times;</button>
+  </div>
+  <div class="p-4 space-y-4 max-h-[70vh] overflow-auto">
+    <div class="flex gap-2 text-[11px]" id="calendarImportProgress">
+      <span class="px-2 py-1 rounded bg-blue-600 text-white" data-step-pill="1">1 Select</span>
+      <span class="px-2 py-1 rounded border" data-step-pill="2">2 Map</span>
+    </div>
+    <section id="calendarImportStep1" class="space-y-3">
+      <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Select Google source calendars to import.</p>
+      <div id="calendarImportSourceList" class="space-y-2"></div>
+    </section>
+    <section id="calendarImportStep2" class="space-y-3 hidden">
+      <div class="flex items-center justify-between gap-3">
+        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Map calendars and categories one source at a time.</p>
+        <p id="calendarImportSubstepLabel" class="text-xs text-gray-500 dark:text-gray-400"></p>
+      </div>
+      <div class="flex flex-wrap gap-2" id="calendarImportSubstepPills"></div>
+      <div id="calendarImportWizardRows" class="space-y-3"></div>
+      <p id="calendarImportPreviewSummary" class="text-xs text-slate-500 dark:text-slate-400 hidden"></p>
+    </section>
+  </div>
+  <div class="p-4 border-t border-gray-200 dark:border-slate-700 flex items-center justify-between">
+    <button type="button" id="calendarImportBack" class="px-3 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600">Back</button>
+    <div class="flex gap-2">
+      <button type="button" id="calendarImportNext" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white">Next</button>
+      <button type="button" id="calendarImportCommit" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hidden">Import selected</button>
+    </div>
+  </div>
+</dialog>
+
 <script id="reminderCategoriesData" type="application/json">{{ reminder_categories|tojson }}</script>
 <script>
   window.REMINDERS_CAL_START = {{ calendar_start_day|tojson }};
@@ -222,9 +311,9 @@
 </script>
 {% endblock %}
 {% block extra_scripts %}
-<script src="/static/js/color_picker.js"></script>
+<script src="/static/js/color_picker.js?v={{ asset_version }}"></script>
 {% if uses_firebase and config.get('google_calendar', {}).get('enabled') %}
-<script src="/static/js/calendar_sync.js"></script>
+<script src="/static/js/calendar_sync.js?v={{ asset_version }}"></script>
 {% endif %}
-<script src="/static/js/calendar_app.js"></script>
+<script src="/static/js/calendar_app.js?v={{ asset_version }}"></script>
 {% endblock %}

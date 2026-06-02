@@ -36,7 +36,7 @@ homehub/
 | `school_permissions.py` | School RBAC: teacher/student/parent_observer, class-scoped access |
 | `school_services.py` | Gradebook, analytics, audit log, submission helpers |
 | `firebase_auth.py` | Firebase Admin init + `verify_id_token` |
-| `google_calendar/` | OAuth, Calendar API client, pull/push sync, ACL helpers |
+| `google_calendar/` | OAuth, Calendar API client, pull/push sync, ACL helpers, import mapping (`imports.py`) |
 | `sensitive_store.py` | Fernet encrypt/decrypt (QR payloads, Google OAuth refresh tokens) |
 | `media_guard.py` | yt-dlp allowlist, concurrency, command builder |
 | `qr_guard.py` | WiFi QR masking, storage preparation |
@@ -53,7 +53,7 @@ All routes attach to **`main_bp`** (`blueprints/__init__.py`) — endpoint names
 | `auth.py` | `/login`, `/auth/*`, global `before_app_request` | Auth gate |
 | `dashboard.py` | `/`, `/api/reminders*`, `/notice`, `/whoishome`, `/status/*` | Home, reminders API, presence |
 | `calendar_page.py` | `/calendar` | Full calendar UI (month/week/agenda + Google setup) |
-| `calendar_sync.py` | `/auth/google/calendar/*`, `/api/calendar/*` | Google OAuth + calendar settings/sync |
+| `calendar_sync.py` | `/auth/google/calendar/*`, `/api/calendar/*` | Google OAuth + calendar settings/sync + import wizard endpoints |
 | `notes.py` | `/notes` | Shared notes |
 | `uploads.py` | `/upload`, `/uploads/*` | Shared cloud |
 | `shopping.py` | `/shopping`, `/api/shopping*` | Shopping list + tags API |
@@ -104,7 +104,7 @@ See `app/models.py` for full schema. Key entities:
 - **Collaboration:** `Note`, `ShoppingItem`, `Chore`, `Recipe`, `ExpiryItem`
 - **Files:** `File`, `Media`, `PDF`
 - **Household:** `HomeStatus`, `MemberStatus`, `Notice`
-- **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`
+- **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`, `PersonalCalendar`, `CalendarImportProfile`, `CalendarImportMapping`, `CategoryImportMapping`
 - **School:** `SchoolClass`, `Enrollment`, `Assignment`, `AssignmentCategory`, `Submission`, `SubmissionArtifact`, `GradeEntry`, `AttendanceRecord`, `SchoolAuditLog`
 - **Money:** `RecurringExpense`, `ExpenseEntry`, `app_setting` (key/value, raw SQL)
 - **Utilities:** `ShortURL`, `QRCode`, `GroceryHistory`

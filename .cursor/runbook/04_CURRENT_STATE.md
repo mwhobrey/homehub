@@ -1,6 +1,6 @@
 # Current State
 
-*Snapshot based on repo at `main` (~bd44ed4 deploy/Firebase fixes). Re-verify before relying on dates.*
+*Snapshot based on repo at `main` (calendar import-first revamp). Re-verify before relying on dates.*
 
 ## What is working
 
@@ -8,7 +8,7 @@
 
 - All feature modules listed in README are implemented as Flask routes + templates (notes, upload, shopping, chores, recipes, expiry, expenses, media, PDFs, shortener, QR, dashboard).
 - **School module** (`/school`): classes, enrollments, assignments with deadlines, student submissions (file upload + external links), teacher grading/feedback, weighted gradebook, attendance, analytics; config under `school:` and toggle `feature_toggles.school`.
-- **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker.
+- **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker, modal Google import wizard (per-calendar mapping, category rules, inline personal calendar create).
 - **Feature toggles** in `config.yml` hide sidebar entries without removing routes entirely (routes still exist if URL known).
 - **SQLite persistence** with automatic table creation and incremental column migrations on startup.
 - **Tailwind UI** with config-driven theming and dark/light system preference.
@@ -18,13 +18,13 @@
 
 - **Legacy mode:** optional shared password (SHA-256), session cookie, rate-limited login.
 - **Firebase mode:** Google sign-in, email allowlist, admin emails, display name mapping, `/auth/session` token exchange.
-- **Google Calendar sync (optional):** Bidirectional sync when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; per-calendar visibility (private / household / custom shares); aggregate dashboard view with per-user display filters and per-save write calendar selection.
+- **Google Calendar sync (optional):** Import-first flow when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; setup supports calendar-to-personal-calendar mapping, import color/category mappings, sync mode (`import_only` default, optional bidirectional), and per-calendar visibility/display controls.
 - **Production compose:** `compose.prod.yml` (localhost bind + proxy network), optional Caddy stack, `docker-entrypoint.sh` copies Firebase SA to `/tmp`.
 - **Hardening:** media domain allowlist + concurrency limits, QR payload encryption, WiFi masking (`test_feature_hardening.py`).
 
 ### Quality
 
-- **`pytest tests/`:** includes `test_school.py` (permissions, submissions, gradebook, attendance).
+- **`pytest tests/`:** includes `test_school.py`, `test_calendar_import_mappings.py`, `test_reminder_personal_calendar_permissions.py` (calendar import/sync permissions).
 - **Docker publish workflow** builds CSS and multi-arch images on `v*` tags.
 
 ## What is incomplete, weak, or operational-only

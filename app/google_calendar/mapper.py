@@ -175,6 +175,16 @@ def event_to_reminder_fields(event: dict, tz_name: str) -> dict:
     }
 
 
+def infer_source_category(event: dict) -> tuple[str, str]:
+    event_type = (event.get('eventType') or '').strip().lower()
+    if event_type:
+        return event_type, event_type.replace('_', ' ').title()
+    color_id = (event.get('colorId') or '').strip()
+    if color_id:
+        return f'google_color_{color_id}', f'Google Color {color_id}'
+    return 'default', 'Default'
+
+
 def reminder_to_google_event(reminder: Reminder, tz_name: str) -> dict:
     tz = reminder_tz(reminder, tz_name)
     body: dict = {

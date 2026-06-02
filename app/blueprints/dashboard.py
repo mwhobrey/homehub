@@ -1,6 +1,6 @@
 from flask import render_template, request, redirect, url_for, flash, jsonify, current_app
 from datetime import datetime, date, timedelta
-from ..models import db, HomeStatus, MemberStatus, Notice, Reminder, RecurringReminder, Chore, LinkedCalendar
+from ..models import db, HomeStatus, MemberStatus, Notice, Reminder, RecurringReminder, Chore, LinkedCalendar, PersonalCalendar, CalendarConnection
 from ..blueprints import main_bp
 from ..user_context import (
     resolve_actor,
@@ -11,6 +11,7 @@ from ..user_context import (
     current_firebase_uid,
 )
 from ..security import sanitize_html, sanitize_text, normalize_hex_color
+from ..google_calendar.imports import ensure_default_personal_calendar, get_connection_sync_mode
 from ..reminder_categories import (
     load_reminder_categories,
     save_reminder_categories,
@@ -27,6 +28,23 @@ def _parse_date_param(value, default=None):
         return datetime.strptime(value, '%Y-%m-%d').date()
     except Exception:
         return default
+
+
+def _validate_personal_calendar_for_actor(pc_id, fallback_uid: str | None = None):
+    if pc_id is None:
+        return None
+    try:
+        pid = int(pc_id)
+    except (TypeError, ValueError):
+        return "invalid", None
+    pc = PersonalCalendar.query.get(pid)
+    if not pc:
+        return "invalid", None
+    # In Firebase mode, lock personal calendar writes to current user's calendars.
+    uid = current_firebase_uid() or fallback_uid
+    if uid and pc.owner_uid != uid:
+        return "forbidden", None
+    return None, pc
 
 
 def _calendar_week_start_day() -> str:
@@ -243,6 +261,7 @@ def _serialize_reminder(r: Reminder):
         'end_time': getattr(r, 'end_time', None) or None,
         'time_zone': getattr(r, 'time_zone', None) or None,
         'attendees': _serialize_attendees_list(r),
+        'personal_calendar_id': getattr(r, 'personal_calendar_id', None),
     }
     data.update(_calendar_meta(r))
     try:
@@ -638,6 +657,14 @@ def api_reminders_create():
     from ..google_calendar.writes import push_reminder_create
 
     payload = request.get_json(silent=True) or {}
+    conn = None
+    sync_mode = 'import_only'
+    if google_calendar_enabled():
+        uid = current_firebase_uid()
+        if uid:
+            conn = CalendarConnection.query.filter_by(firebase_uid=uid).first()
+            if conn:
+                sync_mode = get_connection_sync_mode(conn)
     title = sanitize_text(payload.get('title', ''))
     creator = resolve_actor(json_payload=payload)
     description = sanitize_html(payload.get('description', ''))
@@ -680,10 +707,24 @@ def api_reminders_create():
             lc = resolve_writable_calendar(lc_id)
             if lc_id is not None and not lc:
                 return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
-            if lc:
+            if lc and sync_mode == 'bidirectional':
                 rr.linked_calendar_id = lc.id
                 rr.owner_uid = current_firebase_uid()
                 rr.source = 'google'
+        pc_id = payload.get('personal_calendar_id')
+        try:
+            pc_id = int(pc_id) if pc_id is not None else None
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+        if pc_id:
+            err_code, pc = _validate_personal_calendar_for_actor(pc_id, conn.firebase_uid if conn else None)
+            if err_code == "invalid":
+                return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+            if err_code == "forbidden":
+                return jsonify({'ok': False, 'error': 'Not allowed'}), 403
+            rr.personal_calendar_id = pc.id
+        elif conn:
+            rr.personal_calendar_id = ensure_default_personal_calendar(conn.firebase_uid).id
         db.session.add(rr)
         db.session.commit()
         if lc:
@@ -720,15 +761,30 @@ def api_reminders_create():
         lc = resolve_writable_calendar(lc_id)
         if lc_id is not None and not lc:
             return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
-        if lc:
+        if lc and sync_mode == 'bidirectional':
             r.source = 'google'
             r.linked_calendar_id = lc.id
             r.owner_uid = current_firebase_uid()
             if 'all_day' not in payload:
                 r.all_day = not tval
+    pc_id = payload.get('personal_calendar_id')
+    try:
+        pc_id = int(pc_id) if pc_id is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+    if pc_id:
+        err_code, pc = _validate_personal_calendar_for_actor(pc_id, conn.firebase_uid if conn else None)
+        if err_code == "invalid":
+            return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+        if err_code == "forbidden":
+            return jsonify({'ok': False, 'error': 'Not allowed'}), 403
+        r.personal_calendar_id = pc.id
+    elif conn:
+        default_pc = ensure_default_personal_calendar(conn.firebase_uid)
+        r.personal_calendar_id = default_pc.id
     db.session.add(r)
     db.session.commit()
-    if lc:
+    if lc and sync_mode == 'bidirectional':
         push_reminder_create(r, lc)
     return jsonify({'ok': True, 'reminder': _serialize_reminder(r)})
 
@@ -739,6 +795,14 @@ def api_reminders_update(rid):
     from ..google_calendar.writes import push_reminder_move, push_reminder_update
 
     r = Reminder.query.get_or_404(rid)
+    conn = None
+    sync_mode = 'import_only'
+    if google_calendar_enabled():
+        uid = current_firebase_uid()
+        if uid:
+            conn = CalendarConnection.query.filter_by(firebase_uid=uid).first()
+            if conn:
+                sync_mode = get_connection_sync_mode(conn)
     payload = request.get_json(silent=True) or {}
     user = resolve_user(json_payload=payload, json_key='creator')
     if not can_modify_reminder(r):
@@ -785,6 +849,21 @@ def api_reminders_update(rid):
                     push_recurring_update(rr, lc_rr)
         r.recurring_id = None
     new_lc = None
+    if 'personal_calendar_id' in payload:
+        pc_val = payload.get('personal_calendar_id')
+        try:
+            pc_id = int(pc_val) if pc_val is not None else None
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+        if pc_id:
+            err_code, pc = _validate_personal_calendar_for_actor(pc_id, conn.firebase_uid if conn else None)
+            if err_code == "invalid":
+                return jsonify({'ok': False, 'error': 'Invalid personal calendar'}), 400
+            if err_code == "forbidden":
+                return jsonify({'ok': False, 'error': 'Not allowed'}), 403
+            r.personal_calendar_id = pc.id
+        else:
+            r.personal_calendar_id = None
     if google_calendar_enabled() and 'linked_calendar_id' in payload:
         try:
             new_lc_id = int(payload.get('linked_calendar_id')) if payload.get('linked_calendar_id') is not None else None
@@ -794,7 +873,7 @@ def api_reminders_update(rid):
         if new_lc_id is not None and not new_lc:
             return jsonify({'ok': False, 'error': 'Invalid calendar'}), 400
     db.session.commit()
-    if google_calendar_enabled():
+    if google_calendar_enabled() and sync_mode == 'bidirectional':
         if new_lc and r.linked_calendar_id and new_lc.id != r.linked_calendar_id:
             old_lc = LinkedCalendar.query.get(r.linked_calendar_id)
             if old_lc and r.google_event_id:

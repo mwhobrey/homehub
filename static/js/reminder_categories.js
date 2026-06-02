@@ -4,6 +4,21 @@
 (function () {
   const STYLE_ID = 'reminder-category-styles';
   const DEFAULT_COLOR = '#2563eb';
+  const uiAlert = (msg, title) => {
+    if (window.globalToast) window.globalToast(msg, 'error');
+    else if (window.homehubDialog?.alert) window.homehubDialog.alert(msg, { title: title || 'Error' });
+    else window.alert(msg);
+  };
+  const uiConfirm = async (msg, title, okText, cancelText) => {
+    if (window.homehubDialog?.confirm) {
+      return window.homehubDialog.confirm(msg, {
+        title: title || 'Confirm',
+        okText: okText || 'OK',
+        cancelText: cancelText || 'Cancel',
+      });
+    }
+    return window.confirm(msg);
+  };
 
   function escapeHtml(s) {
     return String(s)
@@ -112,7 +127,7 @@
           row.querySelector('.cat-save')?.addEventListener('click', () => {
             const label = row.querySelector('.cat-edit-label')?.value?.trim();
             if (!label) {
-              window.alert('Label is required.');
+              uiAlert('Label is required.');
               return;
             }
             cat.label = label;
@@ -141,8 +156,13 @@
             editingKey = cat.key;
             render();
           });
-          row.querySelector('.cat-delete')?.addEventListener('click', () => {
-            if (!window.confirm(`Delete category "${cat.label || cat.key}"? Existing events keep the key but may look uncategorized.`)) {
+          row.querySelector('.cat-delete')?.addEventListener('click', async () => {
+            if (!(await uiConfirm(
+              `Delete category "${cat.label || cat.key}"? Existing events keep the key but may look uncategorized.`,
+              'Delete Category',
+              'Delete',
+              'Cancel'
+            ))) {
               return;
             }
             categories = categories.filter((c) => c.key !== cat.key);
@@ -170,7 +190,7 @@
       addRow.querySelector('.cat-add')?.addEventListener('click', () => {
         const label = addRow.querySelector('.cat-new-label')?.value?.trim();
         if (!label) {
-          window.alert('Enter a label.');
+          uiAlert('Enter a label.');
           return;
         }
         let key = slugFromLabel(label);
@@ -194,7 +214,7 @@
     async function persist() {
       const res = await saveList(categories);
       if (!res.ok) {
-        window.alert(res.error || 'Could not save categories');
+        uiAlert(res.error || 'Could not save categories');
         return;
       }
       categories = res.categories || categories;

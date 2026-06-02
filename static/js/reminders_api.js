@@ -37,37 +37,68 @@ window.remindersApi = (function(){
 })();
 
 window.calendarSyncApi = (function(){
+  async function parseJsonSafe(response){
+    const ct = response.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      return { ok: false, error: `non_json_response_${response.status}` };
+    }
+    try {
+      return await response.json();
+    } catch (_) {
+      return { ok: false, error: `invalid_json_response_${response.status}` };
+    }
+  }
   async function status(){
     const r = await fetch('/api/calendar/status');
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function writableCalendars(){
     const r = await fetch('/api/calendar/writable-calendars');
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function calendars(){
     const r = await fetch('/api/calendar/calendars');
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function patchCalendar(id, data){
     const r = await fetch('/api/calendar/calendars/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function putShares(id, shares){
     const r = await fetch('/api/calendar/calendars/'+id+'/shares', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({shares})});
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function displayPrefs(prefs){
     const r = await fetch('/api/calendar/display-prefs', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prefs})});
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function syncNow(){
     const r = await fetch('/api/calendar/sync', {method:'POST'});
-    return r.json();
+    return parseJsonSafe(r);
   }
   async function disconnect(removeGoogleReminders){
     const r = await fetch('/api/calendar/disconnect', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({remove_google_reminders: !!removeGoogleReminders})});
-    return r.json();
+    return parseJsonSafe(r);
   }
-  return {status, writableCalendars, calendars, patchCalendar, putShares, displayPrefs, syncNow, disconnect};
+  async function syncMode(mode){
+    const r = await fetch('/api/calendar/sync-mode', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode})});
+    return parseJsonSafe(r);
+  }
+  async function importOptions(){
+    const r = await fetch('/api/calendar/import/options');
+    return parseJsonSafe(r);
+  }
+  async function importPreview(selections){
+    const r = await fetch('/api/calendar/import/preview', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({selections})});
+    return parseJsonSafe(r);
+  }
+  async function importCommit(selections){
+    const r = await fetch('/api/calendar/import/commit', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({selections})});
+    return parseJsonSafe(r);
+  }
+  async function patchImportMapping(id, data){
+    const r = await fetch('/api/calendar/import/mappings/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+    return parseJsonSafe(r);
+  }
+  return {status, writableCalendars, calendars, patchCalendar, putShares, displayPrefs, syncNow, disconnect, syncMode, importOptions, importPreview, importCommit, patchImportMapping};
 })();

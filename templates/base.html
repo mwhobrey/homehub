@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config.instance_name }} - HomeHub</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='output.css') }}?v={{ asset_version }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -200,6 +200,62 @@
             };
         })();        
         (function(){
+            if(window.homehubDialog) return;
+            function ensure(){
+                let dlg = document.getElementById('homehubDialog');
+                if(dlg) return dlg;
+                dlg = document.createElement('dialog');
+                dlg.id = 'homehubDialog';
+                dlg.className = 'rounded-lg p-0 shadow-xl border w-[92vw] max-w-md';
+                dlg.innerHTML = `
+                  <div class="p-4 space-y-3">
+                    <h3 id="homehubDialogTitle" class="text-sm font-semibold">Confirm</h3>
+                    <p id="homehubDialogMessage" class="text-sm text-gray-600"></p>
+                    <div class="flex justify-end gap-2">
+                      <button id="homehubDialogCancel" class="px-3 py-1.5 rounded border text-sm">Cancel</button>
+                      <button id="homehubDialogOk" class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm">OK</button>
+                    </div>
+                  </div>`;
+                document.body.appendChild(dlg);
+                return dlg;
+            }
+            window.homehubDialog = {
+                confirm(message, opts){
+                    const options = opts || {};
+                    const dlg = ensure();
+                    const t = dlg.querySelector('#homehubDialogTitle');
+                    const m = dlg.querySelector('#homehubDialogMessage');
+                    const ok = dlg.querySelector('#homehubDialogOk');
+                    const cancel = dlg.querySelector('#homehubDialogCancel');
+                    t.textContent = options.title || 'Confirm';
+                    m.textContent = message || '';
+                    ok.textContent = options.okText || 'OK';
+                    cancel.textContent = options.cancelText || 'Cancel';
+                    cancel.style.display = options.cancelText === '' ? 'none' : '';
+                    return new Promise((resolve) => {
+                        const cleanup = () => {
+                            ok.removeEventListener('click', onOk);
+                            cancel.removeEventListener('click', onCancel);
+                            dlg.removeEventListener('cancel', onCancel);
+                        };
+                        const onOk = () => { cleanup(); dlg.close(); resolve(true); };
+                        const onCancel = () => { cleanup(); dlg.close(); resolve(false); };
+                        ok.addEventListener('click', onOk, { once: true });
+                        cancel.addEventListener('click', onCancel, { once: true });
+                        dlg.addEventListener('cancel', onCancel, { once: true });
+                        dlg.showModal();
+                    });
+                },
+                alert(message, opts){
+                    return this.confirm(message, {
+                        title: (opts && opts.title) || 'Notice',
+                        okText: (opts && opts.okText) || 'OK',
+                        cancelText: '',
+                    });
+                },
+            };
+        })();
+        (function(){
             const wrap = document.getElementById('globalFlashWrap');
             if(!wrap) return;
             const msgs = Array.from(wrap.querySelectorAll('.px-3, .flash-msg'));
@@ -369,9 +425,9 @@
     </div>
     
 </body>
-<script src="/static/js/reminders_api.js"></script>
-<script src="/static/js/recurrence_controls.js"></script>
-<script src="/static/js/reminder_categories.js"></script>
+<script src="/static/js/reminders_api.js?v={{ asset_version }}"></script>
+<script src="/static/js/recurrence_controls.js?v={{ asset_version }}"></script>
+<script src="/static/js/reminder_categories.js?v={{ asset_version }}"></script>
 {% block extra_scripts %}{% endblock %}
 <script>
 // Register Service Worker for PWA

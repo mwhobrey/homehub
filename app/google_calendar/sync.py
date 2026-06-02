@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from flask import current_app
 
 from ..models import (
+    CalendarImportMapping,
     CalendarConnection,
     CalendarDisplayPref,
     LinkedCalendar,
@@ -15,7 +16,8 @@ from ..models import (
 )
 from ..user_context import current_display_name
 from .client import get_calendar_service
-from .mapper import event_to_reminder_fields
+from .imports import get_category_mapping, get_connection_sync_mode
+from .mapper import event_to_reminder_fields, infer_source_category
 from .writes import process_outbox_for_connection
 
 _sync_locks: set[int] = set()
@@ -99,6 +101,23 @@ def _upsert_event(lc: LinkedCalendar, conn: CalendarConnection, event: dict, tz:
         linked_calendar_id=lc.id, google_event_id=eid
     ).first()
     fields = event_to_reminder_fields(event, tz)
+    mapping = CalendarImportMapping.query.filter_by(
+        connection_id=conn.id,
+        linked_calendar_id=lc.id,
+        import_enabled=True,
+    ).first()
+    if mapping:
+        fields['personal_calendar_id'] = mapping.personal_calendar_id
+        if mapping.import_color:
+            fields['color'] = mapping.import_color
+    source_key, source_label = infer_source_category(event)
+    category_map = get_category_mapping(conn.id, lc.id, source_key)
+    if category_map and category_map.target_key:
+        fields['category'] = category_map.target_key
+        if not fields.get('color') and category_map.target_color:
+            fields['color'] = category_map.target_color
+    elif source_label and not fields.get('category'):
+        fields['category'] = source_key
     display = conn.firebase_email or ''
     names = (current_app.config.get('HOMEHUB_CONFIG') or {}).get('auth', {}).get(
         'display_names', {}
@@ -152,9 +171,21 @@ def sync_connection(conn: CalendarConnection) -> None:
         return
     _sync_locks.add(conn.id)
     try:
-        process_outbox_for_connection(conn.id)
+        if get_connection_sync_mode(conn) == 'bidirectional':
+            process_outbox_for_connection(conn.id)
         for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).all():
-            if lc.sync_enabled:
+            if not lc.sync_enabled:
+                continue
+            mapping = CalendarImportMapping.query.filter_by(
+                connection_id=conn.id,
+                linked_calendar_id=lc.id,
+            ).first()
+            if mapping and not mapping.import_enabled:
+                continue
+            if mapping is None:
+                # No mapping yet: keep behavior as import-enabled to avoid data loss.
+                pull_calendar(lc)
+            else:
                 pull_calendar(lc)
         conn.last_sync_at = datetime.utcnow()
         db.session.commit()

@@ -11,6 +11,8 @@ from app.reminder_categories import (
     save_reminder_categories,
     slugify_category_key,
 )
+from app.google_calendar.imports import upsert_category_mappings
+from app.models import CalendarConnection, LinkedCalendar, CategoryImportMapping
 
 
 def make_app(categories=None):
@@ -92,3 +94,46 @@ def test_api_list_and_put(client=None):
         assert row is not None
         stored = json.loads(row[0])
         assert stored[0]['label'] == 'School'
+
+
+def test_category_import_mapping_upsert_updates_color_and_label():
+    app = make_app()
+    with app.app_context():
+        conn = CalendarConnection(firebase_uid='u1', firebase_email='u1@example.com', refresh_token_enc='x')
+        db.session.add(conn)
+        db.session.flush()
+        lc = LinkedCalendar(connection_id=conn.id, google_calendar_id='g1', summary='Work')
+        db.session.add(lc)
+        db.session.commit()
+        upsert_category_mappings(
+            conn.id,
+            lc.id,
+            [
+                {
+                    'source_key': 'default',
+                    'source_label': 'Default',
+                    'target_key': 'family',
+                    'target_label': 'Family',
+                    'target_color': '#123456',
+                }
+            ],
+        )
+        db.session.commit()
+        upsert_category_mappings(
+            conn.id,
+            lc.id,
+            [
+                {
+                    'source_key': 'default',
+                    'source_label': 'Default',
+                    'target_key': 'home',
+                    'target_label': 'Home',
+                    'target_color': '#654321',
+                }
+            ],
+        )
+        db.session.commit()
+        row = CategoryImportMapping.query.filter_by(connection_id=conn.id, linked_calendar_id=lc.id, source_key='default').first()
+        assert row is not None
+        assert row.target_key == 'home'
+        assert row.target_color == '#654321'

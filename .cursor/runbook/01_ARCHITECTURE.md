@@ -120,11 +120,11 @@ flowchart TB
 |---------|---------|-----------|
 | **Open-Meteo** | `GET /api/weather` + `static/js/weather.js` | Lat/lon, timezone (browser or config) |
 | **Firebase Auth** | Login page, `/auth/session` | Google ID token; server uses service account JSON |
-| **Google Calendar API** | `app/google_calendar/*`, `/auth/google/calendar/*`, `/api/calendar/*` | OAuth refresh tokens (encrypted); event sync when enabled |
+| **Google Calendar API** | `app/google_calendar/*`, `/auth/google/calendar/*`, `/api/calendar/*` | OAuth refresh tokens (encrypted); import-first sync with optional bidirectional opt-in |
 | **Google Fonts / Font Awesome CDN** | `templates/base.html` | Browser loads assets from CDNs |
 | **YouTube/Vimeo/etc.** | yt-dlp | Video URLs (operator-controlled allowlist) |
 
-Notes/shopping/etc. remain local-only; calendar optionally syncs to Google when configured.
+Notes/shopping/etc. remain local-only; calendar supports Google import with default `import_only` mode and optional bidirectional sync mode.
 
 ## Security architecture (production-oriented)
 

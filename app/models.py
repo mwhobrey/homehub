@@ -143,6 +143,7 @@ class Reminder(db.Model):
     end_time = db.Column(db.String(5))
     time_zone = db.Column(db.String(64))
     attendees_json = db.Column(db.Text)
+    personal_calendar_id = db.Column(db.Integer, db.ForeignKey('personal_calendar.id'))
 
 
 class CalendarConnection(db.Model):
@@ -158,6 +159,7 @@ class CalendarConnection(db.Model):
     oauth_state_nonce = db.Column(db.String(64))
     connected_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_sync_at = db.Column(db.DateTime)
+    sync_mode = db.Column(db.String(24), default='import_only')
 
 
 class LinkedCalendar(db.Model):
@@ -173,6 +175,62 @@ class LinkedCalendar(db.Model):
     last_sync_at = db.Column(db.DateTime)
     last_sync_error = db.Column(db.Text)
     connection = db.relationship('CalendarConnection', backref=db.backref('calendars', lazy=True))
+
+
+class PersonalCalendar(db.Model):
+    __tablename__ = 'personal_calendar'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_uid = db.Column(db.String(128), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    color = db.Column(db.String(16))
+    visibility = db.Column(db.String(16), default='private')
+    archived = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CalendarImportProfile(db.Model):
+    __tablename__ = 'calendar_import_profile'
+    id = db.Column(db.Integer, primary_key=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey('calendar_connection.id'), nullable=False, unique=True)
+    default_sync_mode = db.Column(db.String(24), default='import_only')
+    require_mapping_review = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    connection = db.relationship('CalendarConnection', backref=db.backref('import_profile', uselist=False))
+
+
+class CalendarImportMapping(db.Model):
+    __tablename__ = 'calendar_import_mapping'
+    id = db.Column(db.Integer, primary_key=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey('calendar_connection.id'), nullable=False, index=True)
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'), nullable=False, index=True)
+    personal_calendar_id = db.Column(db.Integer, db.ForeignKey('personal_calendar.id'), nullable=False, index=True)
+    import_enabled = db.Column(db.Boolean, default=True)
+    import_color = db.Column(db.String(16))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    connection = db.relationship('CalendarConnection', backref=db.backref('import_mappings', lazy=True))
+    linked_calendar = db.relationship('LinkedCalendar', backref=db.backref('import_mapping', uselist=False))
+    personal_calendar = db.relationship('PersonalCalendar', backref=db.backref('source_mappings', lazy=True))
+
+
+class CategoryImportMapping(db.Model):
+    __tablename__ = 'category_import_mapping'
+    id = db.Column(db.Integer, primary_key=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey('calendar_connection.id'), nullable=False, index=True)
+    linked_calendar_id = db.Column(db.Integer, db.ForeignKey('linked_calendar.id'), nullable=False, index=True)
+    source_key = db.Column(db.String(128), nullable=False)
+    source_label = db.Column(db.String(128))
+    target_key = db.Column(db.String(64))
+    target_label = db.Column(db.String(128))
+    target_color = db.Column(db.String(16))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        db.UniqueConstraint('connection_id', 'linked_calendar_id', 'source_key', name='uq_category_import_map_source'),
+    )
+    connection = db.relationship('CalendarConnection', backref=db.backref('category_mappings', lazy=True))
 
 
 class CalendarShare(db.Model):
@@ -250,6 +308,7 @@ class RecurringReminder(db.Model):
     owner_uid = db.Column(db.String(128))
     source = db.Column(db.String(16), default='local')
     sync_status = db.Column(db.String(32), default='synced')
+    personal_calendar_id = db.Column(db.Integer, db.ForeignKey('personal_calendar.id'))
 
 class ExpenseEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
