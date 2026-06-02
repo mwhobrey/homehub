@@ -22,9 +22,11 @@
 
 ### CSS
 
-- Build before commit/release: `npm run build:css` → commits `static/output.css` (CI builds in Docker pipeline too).
+- Build before release: `npm run build:css` (Dockerfile and `compose.prod.yml` build run this automatically).
+- `static/output.css` is **gitignored** — do not rely on committing it; production CSS comes from the image build.
 - Dev watch: `npm run watch:css`.
-- Config: `tailwind.config.js` content paths include `templates/**/*.html`.
+- Calendar import wizard layout is also inlined in `templates/calendar.html` for dev without a CSS rebuild.
+- Config: `tailwind.config.js` content paths include `templates/**/*.html` and `static/js/**/*.js`.
 
 ## Error handling
 
@@ -95,9 +97,11 @@ Operator flows:
 10. **`datetime.utcnow()`** deprecated in Python 3.12 — warnings in tests.
 11. **Service worker** caches static assets but bypasses `/api/*` — offline mode shows stale UI for dynamic data.
 12. **README vs code:** README still describes older auth; `config-example.yml` and `docs/DEPLOY.md` are authoritative for Firebase.
-13. **Google Calendar sync** requires `auth.mode: firebase` and `google_calendar.enabled`; refresh tokens encrypted with `SECRET_KEY` — rotating `SECRET_KEY` invalidates stored tokens (re-connect OAuth).
+13. **Google Calendar sync** requires `auth.mode: firebase` and `google_calendar.enabled`; refresh tokens encrypted with `SECRET_KEY` — rotating `SECRET_KEY` invalidates stored tokens (re-connect OAuth). Local dev without `SECRET_KEY` uses stable `data/.secret_key` (gitignored).
 14. **HomeHub `RecurringReminder` rules** are not exported to Google in v1; Google recurring events import as expanded instances only.
-13. **Config reload on every request** — can hide bugs in tests if `TESTING` not set; small I/O cost in prod.
+15. **Windows dev:** `run.py` disables Werkzeug reloader by default; calendar sync timers are daemon threads so Ctrl+C exits cleanly.
+16. **Fork deploy:** use `compose.prod.yml` + `docker compose build` — do not pull `ghcr.io/surajverma/homehub:latest` for fork-specific changes.
+17. **Config reload on every request** — can hide bugs in tests if `TESTING` not set; small I/O cost in prod.
 
 ## Adding a new feature (checklist)
 

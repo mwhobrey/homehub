@@ -1,5 +1,6 @@
 # Database files
 data/app.db
+data/.secret_key
 data/qr/
 data/firebase-service-account.json
 database.db

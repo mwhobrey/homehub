@@ -44,6 +44,11 @@
   const wizardStateBySource = new Map();
   let wizardMapIndex = 0;
 
+  const WIZARD_STEP_META = [
+    { title: 'Select sources' },
+    { title: 'Map & import' },
+  ];
+
   function updateWriteHint() {
     if (!writeHint || !writeSelect) return;
     const opt = writeSelect.selectedOptions[0];
@@ -247,21 +252,24 @@
       const existingMappings = source?.category_mappings || [];
       const inferred = source?.source_categories || [];
       const merged = new Map();
+      const fallbackColor = source?.background_color || '#2563eb';
       inferred.forEach((c) => {
+        const label = c.label || c.key;
         merged.set(c.key, {
           source_key: c.key,
-          source_label: c.label || c.key,
-          target_label: '',
-          target_color: source?.background_color || '#2563eb',
-          enabled: false,
+          source_label: label,
+          target_label: label,
+          target_color: c.color || fallbackColor,
+          enabled: true,
         });
       });
       existingMappings.forEach((c) => {
+        const label = c.source_label || c.source_key;
         merged.set(c.source_key, {
           source_key: c.source_key,
-          source_label: c.source_label || c.source_key,
-          target_label: c.target_label || '',
-          target_color: c.target_color || source?.background_color || '#2563eb',
+          source_label: label,
+          target_label: c.target_label || label,
+          target_color: c.target_color || fallbackColor,
           enabled: true,
         });
       });
@@ -269,8 +277,8 @@
         merged.set('default', {
           source_key: 'default',
           source_label: 'Default',
-          target_label: '',
-          target_color: source?.background_color || '#2563eb',
+          target_label: 'Default',
+          target_color: fallbackColor,
           enabled: true,
         });
       }
@@ -314,18 +322,23 @@
   function renderSourceList() {
     if (!wizardSourceList) return;
     wizardSourceList.innerHTML = '';
+    if (!importOptions.length) {
+      wizardSourceList.innerHTML = '<p class="text-sm text-gray-500 py-4 text-center">No Google calendars available. Connect Google in Setup first.</p>';
+      return;
+    }
     importOptions.forEach((cal) => {
+      const catCount = (cal.source_categories || []).length;
       const row = document.createElement('label');
-      row.className = 'flex items-center justify-between gap-3 p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 cursor-pointer hover:border-blue-400 transition-colors';
+      row.className = 'cal-source-card';
       row.innerHTML = `
-        <span class="flex items-center gap-2 min-w-0">
-          <span class="w-3 h-3 rounded-full flex-shrink-0" style="background:${cal.background_color || '#2563eb'}"></span>
-          <span class="min-w-0">
-            <span class="font-medium text-sm block truncate text-slate-900 dark:text-slate-100">${escapeHtml(cal.summary || '')}</span>
-            <span class="text-[11px] text-slate-500 dark:text-slate-400 block">${(cal.source_categories || []).length} Google categories detected</span>
+        <input type="checkbox" data-source-id="${cal.id}" ${selectedSourceIds.has(cal.id) ? 'checked' : ''} aria-label="Import ${escapeHtml(cal.summary || 'calendar')}">
+        <span class="min-w-0 flex-1">
+          <span class="flex items-center gap-2 min-w-0">
+            <span class="w-3 h-3 rounded-full shrink-0" style="background:${cal.background_color || '#2563eb'}" aria-hidden="true"></span>
+            <span class="font-semibold text-sm truncate block">${escapeHtml(cal.summary || 'Untitled calendar')}</span>
           </span>
+          <span class="text-xs text-gray-500 mt-1 block">${catCount ? `${catCount} categor${catCount === 1 ? 'y' : 'ies'} detected` : 'No category labels detected — default mapping will be used'}</span>
         </span>
-        <input type="checkbox" class="h-4 w-4" data-source-id="${cal.id}" ${selectedSourceIds.has(cal.id) ? 'checked' : ''}>
       `;
       row.querySelector('input')?.addEventListener('change', (e) => {
         if (e.target.checked) selectedSourceIds.add(cal.id);
@@ -343,6 +356,18 @@
     });
   }
 
+  function setAllSourceSelection(selectAll) {
+    if (selectAll) importOptions.forEach((c) => selectedSourceIds.add(c.id));
+    else {
+      selectedSourceIds.clear();
+      wizardMapIndex = 0;
+    }
+    renderSourceList();
+    renderMapSubstepPills();
+    renderImportWizardRows();
+    updateWizardFooter();
+  }
+
   function renderMapSubstepPills() {
     if (!wizardSubstepPills) return;
     const selected = selectedImportOptions();
@@ -351,8 +376,11 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       const active = idx === wizardMapIndex;
-      btn.className = `px-3 py-1.5 rounded-full text-xs border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 hover:border-blue-400'}`;
-      btn.textContent = `${idx + 1}. ${cal.summary || `Calendar ${cal.id}`}`;
+      btn.className = `cal-map-pill${active ? ' is-active' : ''}`;
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      btn.title = cal.summary || `Calendar ${cal.id}`;
+      btn.textContent = cal.summary || `Calendar ${cal.id}`;
       btn.addEventListener('click', () => {
         wizardMapIndex = idx;
         renderMapSubstepPills();
@@ -363,8 +391,8 @@
     });
     if (wizardSubstepLabel) {
       wizardSubstepLabel.textContent = selected.length
-        ? `Mapping ${wizardMapIndex + 1} of ${selected.length}`
-        : 'No calendars selected';
+        ? `${wizardMapIndex + 1} / ${selected.length}`
+        : '';
     }
   }
 
@@ -373,7 +401,7 @@
     wizardRows.innerHTML = '';
     const selected = selectedImportOptions();
     if (!selected.length) {
-      wizardRows.innerHTML = '<p class="text-xs text-slate-500 dark:text-slate-400">Select at least one source calendar in step 1.</p>';
+      wizardRows.innerHTML = '<p class="text-sm text-gray-500 py-6 text-center">Go back and select at least one Google calendar.</p>';
       return;
     }
     const cal = selected[Math.max(0, Math.min(wizardMapIndex, selected.length - 1))];
@@ -381,58 +409,63 @@
     const categoryTotal = (state.categories || []).length;
     const categoryMapped = (state.categories || []).filter((c) => c.enabled && (c.target_label || '').trim()).length;
     const row = document.createElement('div');
-    row.className = 'border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 space-y-4 bg-white dark:bg-slate-800 shadow-sm';
+    row.className = 'cal-map-card space-y-4';
     const datalistId = `calendarImportPersonalSuggestions-${cal.id}`;
     const datalistOptions = personalCalendars
       .map((pc) => `<option value="${escapeHtml(pc.name || `Calendar ${pc.id}`)}"></option>`)
       .join('');
     row.innerHTML = `
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <p class="text-base font-semibold leading-tight text-slate-900 dark:text-slate-100">${escapeHtml(cal.summary || '')}</p>
-          <p class="text-[11px] text-slate-500 dark:text-slate-400">${categoryTotal} Google categories · ${categoryMapped} mapped for import</p>
-          <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate" title="${escapeHtml(cal.google_calendar_id || '')}">${escapeHtml(cal.google_calendar_id || '')}</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-base font-bold leading-tight truncate">${escapeHtml(cal.summary || 'Untitled calendar')}</p>
+          <p class="text-xs text-gray-500 mt-1">${categoryMapped} of ${categoryTotal} categories mapped</p>
         </div>
-        <label class="text-xs inline-flex items-center gap-2 bg-slate-50 dark:bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200">
-          <input type="checkbox" data-field="import_enabled" ${state.import_enabled ? 'checked' : ''}>
-          Import this calendar
+        <label class="inline-flex items-center gap-2 text-sm font-medium shrink-0 cursor-pointer">
+          <input type="checkbox" class="h-4 w-4 accent-[var(--primary-color)]" data-field="import_enabled" ${state.import_enabled ? 'checked' : ''}>
+          Import events
         </label>
       </div>
-      <div class="grid md:grid-cols-2 gap-3.5">
-        <label class="text-xs font-medium text-slate-700 dark:text-slate-200">Destination HomeHub calendar
-          <input class="w-full h-10 border border-slate-300 dark:border-slate-700 rounded-lg px-3 mt-1.5 bg-white dark:bg-slate-900" data-field="personal_calendar_name" list="${datalistId}" value="${escapeHtml(state.personal_calendar_name || '')}" placeholder="Type to search or create new">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <label class="cal-field">Destination HomeHub calendar
+          <input data-field="personal_calendar_name" list="${datalistId}" value="${escapeHtml(state.personal_calendar_name || '')}" placeholder="e.g. Family, Work…" autocomplete="off">
           <datalist id="${datalistId}">${datalistOptions}</datalist>
-          <p class="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Pick existing or type a new name to create it on import.</p>
+          <span class="cal-field-hint">Pick an existing calendar or type a new name to create one on import.</span>
         </label>
-        <label class="text-xs font-medium text-slate-700 dark:text-slate-200">Imported event color
-          <input class="w-full h-10 border border-slate-300 dark:border-slate-700 rounded-lg px-2 mt-1.5" type="color" data-field="import_color" value="${state.import_color || '#2563eb'}">
+        <label class="cal-field">Default event color
+          <input type="color" data-field="import_color" value="${state.import_color || '#2563eb'}">
         </label>
       </div>
-      <div class="space-y-2.5">
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Category mappings</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400">Choose which Google categories to map and what HomeHub category each one should become.</p>
-        <div class="space-y-2 max-h-72 overflow-auto pr-1" data-category-rows></div>
+      <div class="space-y-2">
+        <p class="text-sm font-semibold">Category mappings</p>
+        <p class="text-xs text-gray-500">Categories are on by default with Google names and colors. Disable a card to skip that label on import.</p>
+        <div class="cal-category-grid" data-category-rows></div>
       </div>
     `;
     const catWrap = row.querySelector('[data-category-rows]');
+    function syncCatRowUi(catRow, enabled) {
+      catRow.classList.toggle('is-disabled', !enabled);
+    }
     (state.categories || []).forEach((cat, idx) => {
       const catRow = document.createElement('div');
-      catRow.className = 'grid grid-cols-[auto_1fr_1fr_auto] gap-2.5 items-center border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50/80 dark:bg-slate-900';
+      catRow.className = `cal-cat-row${cat.enabled ? '' : ' is-disabled'}`;
       catRow.innerHTML = `
-        <input type="checkbox" class="h-4 w-4" data-cat-field="enabled" ${cat.enabled ? 'checked' : ''}>
-        <div class="text-xs">
-          <p class="font-medium text-slate-900 dark:text-slate-100">${escapeHtml(cat.source_label || cat.source_key)}</p>
-          <p class="text-[10px] text-slate-500 dark:text-slate-400">${escapeHtml(cat.source_key)}</p>
+        <div class="cal-cat-row__head">
+          <input type="checkbox" data-cat-field="enabled" ${cat.enabled ? 'checked' : ''} aria-label="Map ${escapeHtml(cat.source_label || cat.source_key)}">
+          <div class="cal-cat-row__title text-xs">
+            <p class="font-semibold truncate">${escapeHtml(cat.source_label || cat.source_key)}</p>
+            <p class="text-[10px] text-gray-500 truncate">${escapeHtml(cat.source_key)}</p>
+          </div>
         </div>
-        <input class="h-8.5 border border-slate-300 dark:border-slate-700 rounded-lg px-2 text-xs bg-white dark:bg-slate-800" data-cat-field="target_label" placeholder="HomeHub category" value="${escapeHtml(cat.target_label || '')}">
-        <input class="h-8.5 w-11 border border-slate-300 dark:border-slate-700 rounded-lg p-0" type="color" data-cat-field="target_color" value="${cat.target_color || '#2563eb'}">
+        <input data-cat-field="target_label" placeholder="HomeHub category" value="${escapeHtml(cat.target_label || '')}" aria-label="HomeHub category for ${escapeHtml(cat.source_label || cat.source_key)}">
+        <input type="color" data-cat-field="target_color" value="${cat.target_color || '#2563eb'}" aria-label="Color for ${escapeHtml(cat.source_label || cat.source_key)}">
       `;
       const enabledEl = catRow.querySelector('[data-cat-field="enabled"]');
       const labelEl = catRow.querySelector('[data-cat-field="target_label"]');
       const colorEl = catRow.querySelector('[data-cat-field="target_color"]');
       enabledEl?.addEventListener('change', (e) => {
         state.categories[idx].enabled = !!e.target.checked;
-        renderImportWizardRows();
+        syncCatRowUi(catRow, state.categories[idx].enabled);
+        updateWizardFooter();
       });
       labelEl?.addEventListener('input', (e) => {
         state.categories[idx].target_label = e.target.value;
@@ -462,48 +495,61 @@
   function updatePreviewSummary() {
     if (!wizardPreviewSummary) return;
     const selected = selectedImportOptions();
-    const onLast = wizardStep === 2 && wizardMapIndex >= selected.length - 1;
-    if (!onLast || !selected.length) {
+    if (wizardStep !== 2 || !selected.length) {
       wizardPreviewSummary.classList.add('hidden');
       return;
     }
     const selections = getWizardSelections();
     const selectedCount = selections.filter((s) => s.import_enabled).length;
     const categoryCount = selections.reduce((sum, s) => sum + ((s.categories || []).length), 0);
-    wizardPreviewSummary.textContent = `Ready to import ${selectedCount} calendar(s) with ${categoryCount} category mapping(s).`;
+    wizardPreviewSummary.textContent = `Ready: ${selectedCount} calendar${selectedCount === 1 ? '' : 's'}, ${categoryCount} category mapping${categoryCount === 1 ? '' : 's'}.`;
     wizardPreviewSummary.classList.remove('hidden');
   }
 
   function updateWizardFooter() {
     const selected = selectedImportOptions();
     const onStep2 = wizardStep === 2;
-    const lastCal = onStep2 && selected.length > 0 && wizardMapIndex >= selected.length - 1;
+    const hasMoreCalendars = onStep2 && selected.length > 0 && wizardMapIndex < selected.length - 1;
 
     if (wizardBackBtn) {
       wizardBackBtn.classList.toggle('invisible', wizardStep === 1);
-      wizardBackBtn.textContent = onStep2 && wizardMapIndex > 0 ? 'Previous calendar' : 'Back';
+      wizardBackBtn.textContent = onStep2 && wizardMapIndex > 0 ? 'Previous' : 'Back';
     }
     if (wizardNextBtn) {
-      const showNext = wizardStep === 1 || (onStep2 && !lastCal);
+      const showNext = wizardStep === 1 || hasMoreCalendars;
       wizardNextBtn.classList.toggle('hidden', !showNext);
-      wizardNextBtn.textContent = wizardStep === 1 ? 'Next' : 'Next calendar';
+      wizardNextBtn.textContent = wizardStep === 1 ? 'Continue' : 'Next calendar';
     }
     if (wizardCommitBtn) {
-      wizardCommitBtn.classList.toggle('hidden', !(onStep2 && lastCal && selected.length));
+      wizardCommitBtn.classList.toggle('hidden', !(onStep2 && selected.length));
     }
     updatePreviewSummary();
   }
 
+  function refreshWizardStepper() {
+    const root = wizardModal || document;
+    [1, 2].forEach((n) => {
+      const pill = root.querySelector(`[data-step-pill="${n}"]`);
+      if (!pill) return;
+      const isCurrent = n === wizardStep;
+      const isComplete = n < wizardStep;
+      pill.classList.remove('is-active', 'is-done');
+      if (isCurrent) pill.classList.add('is-active');
+      else if (isComplete) pill.classList.add('is-done');
+      const numEl = pill.querySelector('.cal-import-step__num');
+      if (numEl) numEl.textContent = isComplete ? '✓' : String(n);
+      pill.setAttribute('aria-current', isCurrent ? 'step' : 'false');
+    });
+  }
+
   function setWizardStep(step) {
     wizardStep = Math.min(2, Math.max(1, step));
-    if (wizardStepLabel) wizardStepLabel.textContent = `Step ${wizardStep} of 2`;
-    [1, 2].forEach((n) => {
-      const pill = document.querySelector(`[data-step-pill="${n}"]`);
-      if (!pill) return;
-      pill.classList.toggle('bg-blue-600', n === wizardStep);
-      pill.classList.toggle('text-white', n === wizardStep);
-      pill.classList.toggle('border', n !== wizardStep);
-    });
+    const meta = WIZARD_STEP_META[wizardStep - 1];
+    if (wizardStepLabel && meta) {
+      wizardStepLabel.textContent = `Step ${wizardStep} of 2 — ${meta.title}`;
+    }
+    refreshWizardStepper();
+    wizardModal?.classList.add('cal-import-modal--wide');
     wizardStep1?.classList.toggle('hidden', wizardStep !== 1);
     wizardStep2?.classList.toggle('hidden', wizardStep !== 2);
     if (wizardStep === 2) {
@@ -608,9 +654,12 @@
   }
   if (wizardCommitBtn) {
     wizardCommitBtn.addEventListener('click', async () => {
+      const prevLabel = wizardCommitBtn.innerHTML;
       wizardCommitBtn.disabled = true;
+      wizardCommitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xs" aria-hidden="true"></i> Importing…';
       const res = await window.calendarSyncApi.importCommit(getWizardSelections());
       wizardCommitBtn.disabled = false;
+      wizardCommitBtn.innerHTML = prevLabel;
       if (!res.ok) {
         if (wizardSummary) wizardSummary.textContent = res.error || 'Import failed';
         return;
@@ -626,7 +675,9 @@
 
   function openImportWizardModal() {
     wizardMapIndex = 0;
+    wizardStateBySource.clear();
     setWizardStep(1);
+    wizardModal?.classList.add('cal-import-modal--wide');
     try {
       wizardModal?.showModal();
     } catch (_) {
@@ -648,6 +699,14 @@
     openImportWizardModal();
   });
   wizardCloseBtn?.addEventListener('click', () => wizardModal?.close());
+  wizardModal?.addEventListener('click', (e) => {
+    if (e.target === wizardModal) wizardModal.close();
+  });
+  document.getElementById('calendarImportSourceToolbar')?.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('[data-import-select]');
+    if (!btn) return;
+    setAllSourceSelection(btn.getAttribute('data-import-select') === 'all');
+  });
   wizardBackBtn?.addEventListener('click', () => {
     if (wizardStep === 2 && wizardMapIndex > 0) {
       wizardMapIndex -= 1;

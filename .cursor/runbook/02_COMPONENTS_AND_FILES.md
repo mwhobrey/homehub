@@ -144,6 +144,9 @@ Tags on shopping/chores/recipes: JSON string in `tags` column, parsed via Jinja 
 | `SW_CACHE_VERSION` | Service worker cache bust (else git tag) |
 | `HOMEHUB_BIND` | Prod compose port binding |
 | `PROXY_NETWORK` | External Docker network for Caddy |
+| `HOMEHUB_DISABLE_BACKGROUND_JOBS` | Skip calendar sync scheduler (local dev) |
+| `FLASK_USE_RELOADER` | `auto` (off on Windows), `0`/`1` to override |
+| `FLASK_DEBUG` | Local dev debugger (`run.py`) |
 
 ## Tests map
 

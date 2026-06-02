@@ -8,7 +8,7 @@
 
 - All feature modules listed in README are implemented as Flask routes + templates (notes, upload, shopping, chores, recipes, expiry, expenses, media, PDFs, shortener, QR, dashboard).
 - **School module** (`/school`): classes, enrollments, assignments with deadlines, student submissions (file upload + external links), teacher grading/feedback, weighted gradebook, attendance, analytics; config under `school:` and toggle `feature_toggles.school`.
-- **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker, modal Google import wizard (per-calendar mapping, category rules, inline personal calendar create).
+- **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker, wide modal Google import wizard (multi-column source/category grids, per-calendar mapping, default category names/colors from Google, import from any mapping step).
 - **Feature toggles** in `config.yml` hide sidebar entries without removing routes entirely (routes still exist if URL known).
 - **SQLite persistence** with automatic table creation and incremental column migrations on startup.
 - **Tailwind UI** with config-driven theming and dark/light system preference.
@@ -18,7 +18,7 @@
 
 - **Legacy mode:** optional shared password (SHA-256), session cookie, rate-limited login.
 - **Firebase mode:** Google sign-in, email allowlist, admin emails, display name mapping, `/auth/session` token exchange.
-- **Google Calendar sync (optional):** Import-first flow when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; setup supports calendar-to-personal-calendar mapping, import color/category mappings, sync mode (`import_only` default, optional bidirectional), and per-calendar visibility/display controls.
+- **Google Calendar sync (optional):** Import-first flow when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; setup supports calendar-to-personal-calendar mapping, import color/category mappings (API returns Google `colorId` palette), sync mode (`import_only` default, optional bidirectional), and per-calendar visibility/display controls.
 - **Production compose:** `compose.prod.yml` (localhost bind + proxy network), optional Caddy stack, `docker-entrypoint.sh` copies Firebase SA to `/tmp`.
 - **Hardening:** media domain allowlist + concurrency limits, QR payload encryption, WiFi masking (`test_feature_hardening.py`).
 
@@ -37,7 +37,12 @@
 | **CSRF** | Disabled project-wide |
 | **Rate limiting** | In-memory only; single gunicorn worker |
 | **Maintainer bandwidth** | README disclaimer: solo maintainer, slow PR/issue response |
-| **Auth refactor scripts** | `scripts/refactor_auth*.py` untracked — local tooling, not product |
+| **Auth refactor scripts** | `scripts/refactor_auth*.py` — local one-off codemods; not committed; delete or archive when auth refactor is done |
+
+## Dev / deploy notes (fork)
+
+- **Local:** `python run.py` (Windows: reloader off by default); optional `HOMEHUB_DISABLE_BACKGROUND_JOBS=1`; stable dev `SECRET_KEY` at `data/.secret_key`.
+- **Production (fork):** `docker compose -f compose.prod.yml build && up -d` — CSS built inside Dockerfile; upstream GHCR image does not include fork changes.
 
 Nothing in-tree flags a specific feature as “broken”; gaps are **process and hardening**, not missing route stubs.
 
@@ -49,7 +54,7 @@ Ordered by impact for this fork (`whobs/dev/homehub` on `main`):
 2. **CI hygiene** — Add a `pytest` job to `.github/workflows/docker-publish.yml` (or separate workflow) so releases cannot ship failing tests.
 3. **Runbook hygiene** — When landing auth/feature/deploy changes, update the relevant runbook section (see `.cursorrules`).
 4. **SQLAlchemy cleanup** — Replace `Model.query.get()` and `utcnow()` to silence 2.0/3.12 warnings before they become errors.
-5. **Delete or document `scripts/refactor_auth*.py`** — Either commit with README note or remove from workspace to avoid accidental runs.
+5. **Delete or ignore `scripts/refactor_auth*.py`** — local codemods only; not shipped in the Docker image.
 6. **Optional:** Alembic or consolidated migration script to replace the growing `__init__.py` SQLite block.
 
 ## Verification commands

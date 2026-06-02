@@ -43,6 +43,8 @@ def test_import_options_preview_and_commit():
     options = client.get("/api/calendar/import/options").get_json()
     assert options["ok"] is True
     assert len(options["linked_calendars"]) == 1
+    for cat in options["linked_calendars"][0]["source_categories"]:
+        assert cat.get("color")
 
     selections = [
         {

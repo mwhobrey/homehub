@@ -14,39 +14,18 @@
   .cal-resize-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; opacity: 0.7; }
   .cal-week-event.conflict { box-shadow: 0 0 0 2px #f59e0b; }
   .cal-week-slot-drop { position: absolute; left: 0; right: 0; height: 48px; z-index: 1; }
-  #calendarImportModal::backdrop {
-    background: rgba(15, 23, 42, 0.68);
-    backdrop-filter: blur(3px);
-  }
-  #calendarImportModal {
-    color: #0f172a;
-  }
-  [data-theme="dark"] #calendarImportModal {
-    color: #e2e8f0;
-  }
-  #calendarImportModal h3,
-  #calendarImportModal p,
-  #calendarImportModal label,
-  #calendarImportModal span,
-  #calendarImportModal button {
-    color: inherit;
-  }
-  #calendarImportModal [data-step-pill]:not(.bg-blue-600) {
-    color: #334155;
-    border-color: #cbd5e1;
-  }
-  [data-theme="dark"] #calendarImportModal [data-step-pill]:not(.bg-blue-600) {
-    color: #cbd5e1;
-    border-color: #475569;
-  }
-  #calendarImportModal input:not([type="color"]):not([type="checkbox"]) {
-    color: #0f172a;
-    background: #ffffff;
-  }
-  [data-theme="dark"] #calendarImportModal input:not([type="color"]):not([type="checkbox"]) {
-    color: #e2e8f0;
-    background: #0f172a;
-  }
+  /* Import wizard layout — inlined so it works before npm run build:css / image rebuild */
+  #calendarImportModal.cal-import-modal { width: min(72rem, calc(100vw - 2rem)); max-height: min(92vh, 56rem); }
+  #calendarImportModal .cal-import-modal__body { max-height: min(68vh, 44rem); }
+  #calendarImportSourceList.cal-import-source-grid { display: grid; gap: 0.625rem; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { #calendarImportSourceList.cal-import-source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { #calendarImportSourceList.cal-import-source-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .cal-category-grid { display: grid; gap: 0.625rem; grid-template-columns: 1fr; }
+  @media (min-width: 768px) { .cal-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1100px) { .cal-category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .cal-cat-row { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border-radius: 0.625rem; border: 1px solid var(--input-border); background: var(--secondary-bg); }
+  .cal-cat-row__head { display: flex; align-items: flex-start; gap: 0.5rem; }
+  .cal-cat-row__title { min-width: 0; flex: 1; }
 </style>
 {% endblock %}
 {% block content %}
@@ -54,16 +33,18 @@
   <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <h1 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-calendar-days text-blue-600"></i> Calendar</h1>
     <div class="flex flex-wrap items-center gap-2">
-      <div class="inline-flex rounded border overflow-hidden text-sm" role="tablist">
-        <button type="button" class="cal-view-btn px-3 py-1.5 bg-blue-600 text-white" data-view="month">Month</button>
-        <button type="button" class="cal-view-btn px-3 py-1.5 bg-white dark:bg-slate-800" data-view="week">Week</button>
-        <button type="button" class="cal-view-btn px-3 py-1.5 bg-white dark:bg-slate-800" data-view="agenda">Agenda</button>
+      <div class="cal-segmented" role="tablist" aria-label="Calendar view">
+        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="month" aria-pressed="true">Month</button>
+        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="week" aria-pressed="false">Week</button>
+        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="agenda" aria-pressed="false">Agenda</button>
       </div>
-      <button type="button" id="calToday" class="px-3 py-1.5 text-sm rounded border bg-white dark:bg-slate-800 hover:bg-gray-50">Today</button>
-      <button type="button" id="calPrev" class="px-2 py-1.5 rounded border bg-white dark:bg-slate-800" aria-label="Previous">◀</button>
-      <span id="calPeriodLabel" class="font-semibold min-w-[10rem] text-center"></span>
-      <button type="button" id="calNext" class="px-2 py-1.5 rounded border bg-white dark:bg-slate-800" aria-label="Next">▶</button>
-      <button type="button" id="calSyncNow" class="px-3 py-1.5 text-sm rounded border bg-white dark:bg-slate-800 hover:bg-gray-50">Sync</button>
+      <button type="button" id="calToday" class="btn btn-secondary text-sm py-2">Today</button>
+      <div class="inline-flex items-center gap-1 rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] px-1">
+        <button type="button" id="calPrev" class="h-9 w-9 rounded-md hover:bg-[var(--secondary-bg)]" aria-label="Previous period"><i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i></button>
+        <span id="calPeriodLabel" class="font-semibold text-sm min-w-[9.5rem] text-center px-1 tabular-nums"></span>
+        <button type="button" id="calNext" class="h-9 w-9 rounded-md hover:bg-[var(--secondary-bg)]" aria-label="Next period"><i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i></button>
+      </div>
+      <button type="button" id="calSyncNow" class="btn btn-secondary text-sm py-2"><i class="fa-solid fa-rotate text-xs" aria-hidden="true"></i> Sync</button>
     </div>
   </div>
 
@@ -234,13 +215,16 @@
               Disconnect Google
             </button>
           </div>
-          <div id="calendarImportWizard" class="space-y-2 border rounded-lg p-3 bg-white/60 dark:bg-slate-900/40">
-            <p class="text-xs font-semibold tracking-wide uppercase text-gray-600 dark:text-gray-300">Import wizard</p>
-            <p class="text-[11px] text-gray-500">Launch a guided import for selected Google calendars.</p>
-            <div class="flex gap-2">
-              <button type="button" id="calendarImportOpen" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white">Open Import Wizard</button>
+          <div id="calendarImportWizard" class="rounded-lg border border-[var(--input-border)] p-3 space-y-2 bg-[var(--secondary-bg)]">
+            <div class="flex items-start gap-2">
+              <i class="fa-solid fa-cloud-arrow-down text-blue-600 mt-0.5" aria-hidden="true"></i>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold">Import from Google</p>
+                <p class="text-xs text-gray-500 mt-0.5">Choose calendars, map categories, and pull events into HomeHub.</p>
+              </div>
             </div>
-            <p id="calendarImportSummary" class="text-[11px] text-gray-500"></p>
+            <button type="button" id="calendarImportOpen" class="btn btn-primary text-sm w-full justify-center py-2">Import calendars…</button>
+            <p id="calendarImportSummary" class="text-xs text-gray-500 min-h-[1.25rem]" role="status" aria-live="polite"></p>
           </div>
           <div>
             <label class="block text-xs font-semibold mb-1">Default write calendar</label>
@@ -267,40 +251,61 @@
   </div>
 </dialog>
 
-<dialog id="calendarImportModal" class="rounded-2xl p-0 shadow-2xl border w-[95vw] max-w-4xl bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700">
-  <div class="p-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
-    <div>
-      <h3 class="text-sm font-semibold">Google Calendar Import Wizard</h3>
-      <p class="text-xs text-gray-500 dark:text-gray-400" id="calendarImportStepLabel">Step 1 of 2</p>
-    </div>
-    <button type="button" id="calendarImportClose" class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white text-lg leading-none">&times;</button>
-  </div>
-  <div class="p-4 space-y-4 max-h-[70vh] overflow-auto">
-    <div class="flex gap-2 text-[11px]" id="calendarImportProgress">
-      <span class="px-2 py-1 rounded bg-blue-600 text-white" data-step-pill="1">1 Select</span>
-      <span class="px-2 py-1 rounded border" data-step-pill="2">2 Map</span>
-    </div>
-    <section id="calendarImportStep1" class="space-y-3">
-      <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Select Google source calendars to import.</p>
-      <div id="calendarImportSourceList" class="space-y-2"></div>
-    </section>
-    <section id="calendarImportStep2" class="space-y-3 hidden">
-      <div class="flex items-center justify-between gap-3">
-        <p class="text-sm font-medium text-slate-900 dark:text-slate-100">Map calendars and categories one source at a time.</p>
-        <p id="calendarImportSubstepLabel" class="text-xs text-gray-500 dark:text-gray-400"></p>
+<dialog id="calendarImportModal" class="cal-import-modal cal-import-modal--wide" aria-labelledby="calendarImportTitle" aria-describedby="calendarImportDesc">
+  <header class="cal-import-modal__header">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <h2 id="calendarImportTitle" class="text-base font-bold leading-tight">Import Google calendars</h2>
+        <p id="calendarImportDesc" class="text-sm text-gray-500 mt-1">Bring events into HomeHub with per-calendar destination and category mapping.</p>
+        <p id="calendarImportStepLabel" class="text-xs font-semibold text-gray-500 mt-2">Step 1 of 2 — Select sources</p>
       </div>
-      <div class="flex flex-wrap gap-2" id="calendarImportSubstepPills"></div>
-      <div id="calendarImportWizardRows" class="space-y-3"></div>
-      <p id="calendarImportPreviewSummary" class="text-xs text-slate-500 dark:text-slate-400 hidden"></p>
+      <button type="button" id="calendarImportClose" class="h-9 w-9 shrink-0 rounded-lg border border-[var(--input-border)] hover:bg-[var(--secondary-bg)] text-gray-500" aria-label="Close import wizard">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div class="cal-import-stepper" id="calendarImportProgress" role="list" aria-label="Import steps">
+      <div class="cal-import-step is-active" data-step-pill="1" role="listitem">
+        <span class="cal-import-step__num" aria-hidden="true">1</span>
+        <span>Select sources</span>
+      </div>
+      <div class="cal-import-step" data-step-pill="2" role="listitem">
+        <span class="cal-import-step__num" aria-hidden="true">2</span>
+        <span>Map &amp; import</span>
+      </div>
+    </div>
+  </header>
+  <div class="cal-import-modal__body">
+    <section id="calendarImportStep1" class="space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm font-medium">Which Google calendars should we import?</p>
+        <div class="flex items-center gap-1" id="calendarImportSourceToolbar">
+          <button type="button" class="cal-toolbar-link" data-import-select="all">Select all</button>
+          <span class="text-gray-400 text-xs" aria-hidden="true">·</span>
+          <button type="button" class="cal-toolbar-link" data-import-select="none">Clear</button>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500">You can refine destination calendars and category labels in the next step.</p>
+      <div id="calendarImportSourceList" class="cal-import-source-grid" role="group" aria-label="Google source calendars"></div>
+    </section>
+    <section id="calendarImportStep2" class="space-y-4 hidden">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <p class="text-sm font-medium">Configure import for each selected calendar.</p>
+        <p id="calendarImportSubstepLabel" class="text-xs font-semibold text-gray-500 tabular-nums"></p>
+      </div>
+      <div class="flex flex-wrap gap-2" id="calendarImportSubstepPills" role="tablist" aria-label="Calendars to map"></div>
+      <div id="calendarImportWizardRows"></div>
+      <p id="calendarImportPreviewSummary" class="text-sm font-medium text-[var(--primary-color)] hidden p-3 rounded-lg border border-[var(--input-border)] bg-[color-mix(in_srgb,var(--primary-color)_8%,transparent)]" role="status"></p>
     </section>
   </div>
-  <div class="p-4 border-t border-gray-200 dark:border-slate-700 flex items-center justify-between">
-    <button type="button" id="calendarImportBack" class="px-3 py-1.5 text-xs rounded border border-slate-300 dark:border-slate-600">Back</button>
-    <div class="flex gap-2">
-      <button type="button" id="calendarImportNext" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white">Next</button>
-      <button type="button" id="calendarImportCommit" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hidden">Import selected</button>
+  <footer class="cal-import-modal__footer">
+    <button type="button" id="calendarImportBack" class="btn btn-secondary text-sm py-2 min-w-[6.5rem]">Back</button>
+    <div class="flex flex-wrap gap-2 justify-end">
+      <button type="button" id="calendarImportNext" class="btn btn-primary text-sm py-2 min-w-[6.5rem]">Continue</button>
+      <button type="button" id="calendarImportCommit" class="btn btn-primary text-sm py-2 hidden">
+        <i class="fa-solid fa-cloud-arrow-down text-xs" aria-hidden="true"></i> Run import
+      </button>
     </div>
-  </div>
+  </footer>
 </dialog>
 
 <script id="reminderCategoriesData" type="application/json">{{ reminder_categories|tojson }}</script>

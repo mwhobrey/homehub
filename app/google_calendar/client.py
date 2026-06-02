@@ -9,7 +9,11 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from ..models import CalendarConnection, db
-from ..sensitive_store import decrypt_sensitive, encrypt_sensitive
+from ..sensitive_store import SensitiveDecryptError, decrypt_sensitive, encrypt_sensitive
+
+
+class CalendarCredentialsError(RuntimeError):
+    """OAuth tokens missing or unreadable (re-connect Google Calendar)."""
 
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -21,8 +25,11 @@ def _gcal_config() -> dict:
 
 def _credentials_from_connection(conn: CalendarConnection) -> Credentials:
     cfg = _gcal_config()
-    refresh = decrypt_sensitive(conn.refresh_token_enc or '')
-    access = decrypt_sensitive(conn.access_token_enc or '') if conn.access_token_enc else None
+    try:
+        refresh = decrypt_sensitive(conn.refresh_token_enc or '')
+        access = decrypt_sensitive(conn.access_token_enc or '') if conn.access_token_enc else None
+    except SensitiveDecryptError as exc:
+        raise CalendarCredentialsError(str(exc)) from exc
     creds = Credentials(
         token=access,
         refresh_token=refresh or None,

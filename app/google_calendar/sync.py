@@ -15,7 +15,7 @@ from ..models import (
     db,
 )
 from ..user_context import current_display_name
-from .client import get_calendar_service
+from .client import CalendarCredentialsError, get_calendar_service
 from .imports import get_category_mapping, get_connection_sync_mode
 from .mapper import event_to_reminder_fields, infer_source_category
 from .writes import process_outbox_for_connection
@@ -78,6 +78,13 @@ def pull_calendar(lc: LinkedCalendar) -> None:
         lc.last_sync_at = datetime.utcnow()
         lc.last_sync_error = None
         db.session.commit()
+    except CalendarCredentialsError as exc:
+        current_app.logger.warning(
+            'Google Calendar connection %s (%s): %s — disconnect and Connect Google again in Calendar Setup.',
+            conn.id,
+            conn.firebase_email or 'unknown',
+            exc,
+        )
     except Exception as exc:
         lc.last_sync_error = str(exc)[:500]
         db.session.commit()

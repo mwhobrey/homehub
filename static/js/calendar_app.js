@@ -677,10 +677,7 @@
     view = v;
     document.querySelectorAll('.cal-view-btn').forEach((btn) => {
       const on = btn.getAttribute('data-view') === v;
-      btn.classList.toggle('bg-blue-600', on);
-      btn.classList.toggle('text-white', on);
-      btn.classList.toggle('bg-white', !on);
-      btn.classList.toggle('dark:bg-slate-800', !on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     if (monthView) monthView.classList.toggle('hidden', v !== 'month');
     if (weekView) weekView.classList.toggle('hidden', v !== 'week');

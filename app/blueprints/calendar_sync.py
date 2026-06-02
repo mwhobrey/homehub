@@ -26,7 +26,12 @@ from ..google_calendar.acl import (
     resolve_writable_calendar,
 )
 from ..google_calendar.client import list_calendar_list
-from ..google_calendar.mapper import infer_source_category
+from ..google_calendar.mapper import (
+    EVENT_TYPE_FALLBACK_COLORS,
+    event_category_color,
+    google_event_color_hex,
+    infer_source_category,
+)
 from ..google_calendar.sync import ensure_display_prefs_for_viewer, sync_connection
 from ..google_calendar.imports import (
     ImportSelection,
@@ -152,7 +157,21 @@ def _allow_bidirectional_opt_in() -> bool:
     return bool(_gcal_cfg().get('allow_bidirectional_opt_in', True))
 
 
-def _infer_google_categories(conn: CalendarConnection, google_calendar_id: str, limit: int = 100) -> list[dict]:
+def _category_row(key: str, label: str, fallback_color: str) -> dict:
+    if key.startswith('google_color_'):
+        cid = key.replace('google_color_', '', 1)
+        color = google_event_color_hex(cid, fallback_color)
+    else:
+        color = EVENT_TYPE_FALLBACK_COLORS.get(key, fallback_color)
+    return {'key': key, 'label': label, 'color': color}
+
+
+def _infer_google_categories(
+    conn: CalendarConnection,
+    google_calendar_id: str,
+    limit: int = 100,
+    fallback_color: str = '#2563eb',
+) -> list[dict]:
     common: dict[str, str] = {
         'default': 'Default',
         'focusTime': 'Focus Time',
@@ -163,8 +182,15 @@ def _infer_google_categories(conn: CalendarConnection, google_calendar_id: str, 
     }
     for i in range(1, 12):
         common[f'google_color_{i}'] = f'Google Color {i}'
+
+    def _sorted_rows(rows: dict[str, str]) -> list[dict]:
+        return [
+            _category_row(k, v, fallback_color)
+            for k, v in sorted(rows.items(), key=lambda item: item[1].lower())
+        ]
+
     if not google_calendar_id:
-        return [{'key': k, 'label': v} for k, v in sorted(common.items(), key=lambda item: item[1].lower())]
+        return _sorted_rows(common)
     try:
         from ..google_calendar.client import get_calendar_service
 
@@ -178,14 +204,18 @@ def _infer_google_categories(conn: CalendarConnection, google_calendar_id: str, 
         events = resp.get('items') or []
     except Exception:
         current_app.logger.exception('calendar import options: category inference failed')
-        return [{'key': k, 'label': v} for k, v in sorted(common.items(), key=lambda item: item[1].lower())]
-    seen: dict[str, str] = dict(common)
+        return _sorted_rows(common)
+    seen: dict[str, dict] = {k: _category_row(k, v, fallback_color) for k, v in common.items()}
     for event in events:
         key, label = infer_source_category(event)
         if not key or key in seen:
             continue
-        seen[key] = label
-    return [{'key': k, 'label': v} for k, v in sorted(seen.items(), key=lambda item: item[1].lower())]
+        seen[key] = {
+            'key': key,
+            'label': label,
+            'color': event_category_color(event, fallback_color),
+        }
+    return sorted(seen.values(), key=lambda x: (x.get('label') or '').lower())
 
 
 @main_bp.route('/auth/google/calendar/start')
@@ -579,7 +609,8 @@ def api_calendar_import_options():
     for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).order_by(LinkedCalendar.summary.asc()).all():
         mapping = CalendarImportMapping.query.filter_by(connection_id=conn.id, linked_calendar_id=lc.id).first()
         cat_rows = CategoryImportMapping.query.filter_by(connection_id=conn.id, linked_calendar_id=lc.id).all()
-        inferred_categories = _infer_google_categories(conn, lc.google_calendar_id)
+        cal_fallback = lc.background_color or '#2563eb'
+        inferred_categories = _infer_google_categories(conn, lc.google_calendar_id, fallback_color=cal_fallback)
         known_keys = {c['key'] for c in inferred_categories}
         for row in cat_rows:
             key = (row.source_key or '').strip()
@@ -587,6 +618,7 @@ def api_calendar_import_options():
                 inferred_categories.append({
                     'key': key,
                     'label': (row.source_label or key),
+                    'color': row.target_color or cal_fallback,
                 })
                 known_keys.add(key)
         linked.append({

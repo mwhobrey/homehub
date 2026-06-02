@@ -6,14 +6,116 @@ from .extensions import limiter
 import os
 import secrets
 from datetime import datetime, timedelta
+from pathlib import Path
 
 db = SQLAlchemy()
 
 _calendar_scheduler_started = False
+_calendar_sync_timer = None
+
+_DEV_SECRET_FILE = '.secret_key'
+
+
+def _load_dotenv() -> None:
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
+
+def _resolve_secret_key(base_dir: str, *, testing: bool) -> str:
+    """Stable key for local dev; env SECRET_KEY for production."""
+    env_secret = (os.environ.get('SECRET_KEY') or '').strip()
+    if env_secret:
+        return env_secret
+    if testing:
+        return 'test'
+    is_prod = os.environ.get('FLASK_ENV') == 'production'
+    if not is_prod:
+        path = os.path.join(base_dir, 'data', _DEV_SECRET_FILE)
+        try:
+            if os.path.isfile(path):
+                with open(path, encoding='utf-8') as fh:
+                    stored = fh.read().strip()
+                if stored:
+                    return stored
+        except OSError:
+            pass
+        import secrets as _secrets
+
+        generated = _secrets.token_hex(32)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(generated + '\n')
+        except OSError:
+            pass
+        return generated
+    import secrets as _secrets
+
+    return _secrets.token_hex(32)
+
+
+_ASSET_BUST_FILES = (
+    'output.css',
+    'input.css',
+    'js/calendar_sync.js',
+    'js/calendar_app.js',
+)
+
+
+def resolve_asset_version(app: Flask) -> str:
+    """Cache-bust static assets in dev; use SW_CACHE_VERSION in production images."""
+    env_v = (os.environ.get('SW_CACHE_VERSION') or '').strip()
+    if env_v and env_v not in ('dev', 'development'):
+        return env_v
+    static_root = Path(app.static_folder) if app.static_folder else Path('static')
+    if not static_root.is_absolute():
+        static_root = Path(app.root_path) / static_root
+    stamps: list[int] = []
+    for rel in _ASSET_BUST_FILES:
+        path = static_root / rel
+        try:
+            if path.is_file():
+                stamps.append(int(path.stat().st_mtime))
+        except OSError:
+            continue
+    if stamps:
+        return str(max(stamps))
+    return env_v or 'dev'
+
+
+def _should_run_background_jobs(app) -> bool:
+    """Avoid starting timers in the Werkzeug reloader parent (duplicate sync + Win socket bugs)."""
+    if os.environ.get('HOMEHUB_DISABLE_BACKGROUND_JOBS', '').lower() in ('1', 'true', 'yes'):
+        return False
+    if app.config.get('TESTING'):
+        return False
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        return True
+    if not app.debug:
+        return True
+    use_reloader = os.environ.get('FLASK_USE_RELOADER', 'auto').lower()
+    if use_reloader in ('0', 'false', 'no'):
+        return True
+    if use_reloader == 'auto' and os.name == 'nt':
+        return True
+    return False
+
+
+def stop_background_jobs() -> None:
+    """Cancel pending calendar sync timers so Ctrl+C can exit promptly."""
+    global _calendar_scheduler_started, _calendar_sync_timer
+    if _calendar_sync_timer is not None:
+        _calendar_sync_timer.cancel()
+        _calendar_sync_timer = None
+    _calendar_scheduler_started = False
 
 
 def _start_calendar_sync_scheduler(app):
-    global _calendar_scheduler_started
+    global _calendar_scheduler_started, _calendar_sync_timer
     if _calendar_scheduler_started:
         return
     cfg = (app.config.get('HOMEHUB_CONFIG') or {}).get('google_calendar') or {}
@@ -23,6 +125,17 @@ def _start_calendar_sync_scheduler(app):
     if interval < 1:
         interval = 15
 
+    import threading
+
+    def _schedule(delay_sec: float) -> None:
+        global _calendar_sync_timer
+        stop_background_jobs()
+        _calendar_scheduler_started = True
+        timer = threading.Timer(delay_sec, _tick)
+        timer.daemon = True
+        _calendar_sync_timer = timer
+        timer.start()
+
     def _tick():
         with app.app_context():
             try:
@@ -30,18 +143,13 @@ def _start_calendar_sync_scheduler(app):
                 sync_all_connections()
             except Exception:
                 app.logger.exception('calendar sync scheduler tick failed')
-        try:
-            import threading
-            threading.Timer(interval * 60, _tick).start()
-        except Exception:
-            pass
+        _schedule(interval * 60)
 
-    import threading
-    threading.Timer(30, _tick).start()
-    _calendar_scheduler_started = True
+    _schedule(30)
 
 
 def create_app(test_config: dict | None = None):
+    _load_dotenv()
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     templates_dir = os.path.join(base_dir, 'templates')
     static_dir = os.path.join(base_dir, 'static')
@@ -66,12 +174,7 @@ def create_app(test_config: dict | None = None):
     db_path = os.path.join(base_dir, 'data', 'app.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_path
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    # Generate a strong SECRET_KEY if not provided via env
-    secret = os.environ.get('SECRET_KEY')
-    if not secret:
-        import secrets as _secrets
-        secret = _secrets.token_hex(32)
-    app.config['SECRET_KEY'] = secret
+    app.config['SECRET_KEY'] = _resolve_secret_key(base_dir, testing=bool(test_config))
     app.config['WTF_CSRF_ENABLED'] = False
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -378,7 +481,7 @@ def create_app(test_config: dict | None = None):
     from .blueprints import school  # noqa: F401
     app.register_blueprint(main_bp)
 
-    if not app.config.get('TESTING'):
+    if _should_run_background_jobs(app):
         _start_calendar_sync_scheduler(app)
 
     @app.context_processor
@@ -391,7 +494,7 @@ def create_app(test_config: dict | None = None):
             'uses_firebase': uses_firebase(),
             'current_user_name': current_display_name(),
             'current_user_is_admin': is_admin(),
-            'asset_version': os.environ.get('SW_CACHE_VERSION', 'dev'),
+            'asset_version': resolve_asset_version(app),
         }
     
     # Add Jinja2 filter for JSON parsing

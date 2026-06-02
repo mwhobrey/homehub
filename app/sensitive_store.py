@@ -10,6 +10,10 @@ from flask import current_app
 _PREFIX = 'enc:v1:'
 
 
+class SensitiveDecryptError(ValueError):
+    """Raised when Fernet cannot decrypt (usually SECRET_KEY rotation or dev key churn)."""
+
+
 def _fernet():
     from cryptography.fernet import Fernet
 
@@ -31,4 +35,14 @@ def decrypt_sensitive(value: str) -> str:
     if not value.startswith(_PREFIX):
         return value
     token = value[len(_PREFIX) :]
-    return _fernet().decrypt(token.encode('ascii')).decode('utf-8')
+    try:
+        return _fernet().decrypt(token.encode('ascii')).decode('utf-8')
+    except Exception as exc:
+        from cryptography.fernet import InvalidToken
+
+        if isinstance(exc, InvalidToken):
+            raise SensitiveDecryptError(
+                'Cannot decrypt stored secret — SECRET_KEY likely changed since data was saved. '
+                'Set a stable SECRET_KEY (see .env.example) or reconnect Google Calendar.'
+            ) from exc
+        raise

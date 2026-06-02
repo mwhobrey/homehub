@@ -2,6 +2,13 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"label": "build:css",
+			"type": "shell",
+			"command": "npm run build:css",
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
 			"label": "rebuild-and-up",
 			"type": "shell",
 			"command": "docker compose down ; docker compose build ; docker compose up -d",

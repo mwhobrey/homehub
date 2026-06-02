@@ -175,6 +175,46 @@ def event_to_reminder_fields(event: dict, tz_name: str) -> dict:
     }
 
 
+# Google Calendar API event colorId → hex (calendar#colors)
+GOOGLE_EVENT_COLOR_HEX: dict[str, str] = {
+    '1': '#a4bdfc',
+    '2': '#7ae7bf',
+    '3': '#dbadff',
+    '4': '#ff887c',
+    '5': '#fbd75b',
+    '6': '#ffb878',
+    '7': '#46d6db',
+    '8': '#e1e1e1',
+    '9': '#5484ed',
+    '10': '#51b749',
+    '11': '#dc2127',
+}
+
+EVENT_TYPE_FALLBACK_COLORS: dict[str, str] = {
+    'default': '#7986cb',
+    'focusTime': '#33b679',
+    'outOfOffice': '#d50000',
+    'workingLocation': '#039be5',
+    'birthday': '#e67c73',
+    'fromGmail': '#616161',
+}
+
+
+def google_event_color_hex(color_id: str | None, fallback: str = '#2563eb') -> str:
+    cid = (color_id or '').strip()
+    if cid and cid in GOOGLE_EVENT_COLOR_HEX:
+        return GOOGLE_EVENT_COLOR_HEX[cid]
+    return fallback
+
+
+def event_category_color(event: dict, fallback: str = '#2563eb') -> str:
+    color_id = (event.get('colorId') or '').strip()
+    if color_id:
+        return google_event_color_hex(color_id, fallback)
+    key, _ = infer_source_category(event)
+    return EVENT_TYPE_FALLBACK_COLORS.get(key, fallback)
+
+
 def infer_source_category(event: dict) -> tuple[str, str]:
     event_type = (event.get('eventType') or '').strip().lower()
     if event_type:
