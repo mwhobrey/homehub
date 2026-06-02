@@ -124,7 +124,7 @@ flowchart TB
 | **Google Fonts / Font Awesome CDN** | `templates/base.html` | Browser loads assets from CDNs |
 | **YouTube/Vimeo/etc.** | yt-dlp | Video URLs (operator-controlled allowlist) |
 
-Notes/shopping/etc. remain local-only; calendar supports Google import with default `import_only` mode and optional bidirectional sync mode.
+Notes/shopping/etc. remain local-only; calendar supports Google import with default `import_only` mode, optional **`manual`** sync (no background pull), and optional bidirectional sync mode. Personal calendars use `app/google_calendar/acl.py` for household vs private visibility and share grants.
 
 ## Security architecture (production-oriented)
 

@@ -183,10 +183,22 @@ class PersonalCalendar(db.Model):
     owner_uid = db.Column(db.String(128), nullable=False, index=True)
     name = db.Column(db.String(128), nullable=False)
     color = db.Column(db.String(16))
-    visibility = db.Column(db.String(16), default='private')
+    visibility = db.Column(db.String(16), default='private')  # household | private
     archived = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PersonalCalendarShare(db.Model):
+    __tablename__ = 'personal_calendar_share'
+    id = db.Column(db.Integer, primary_key=True)
+    personal_calendar_id = db.Column(db.Integer, db.ForeignKey('personal_calendar.id'), nullable=False, index=True)
+    grantee_uid = db.Column(db.String(128), nullable=False, index=True)
+    can_write = db.Column(db.Boolean, default=False)
+    personal_calendar = db.relationship('PersonalCalendar', backref=db.backref('shares', lazy=True))
+    __table_args__ = (
+        db.UniqueConstraint('personal_calendar_id', 'grantee_uid', name='uq_personal_calendar_share'),
+    )
 
 
 class CalendarImportProfile(db.Model):

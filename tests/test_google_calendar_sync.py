@@ -64,6 +64,39 @@ def test_pull_upserts_event():
         assert lc.sync_token == 'token123'
 
 
+def test_sync_connection_skips_pull_when_manual():
+    app = make_app()
+    with app.app_context():
+        conn = CalendarConnection(
+            firebase_uid='u1',
+            firebase_email='a@t.com',
+            refresh_token_enc='x',
+            sync_mode='manual',
+        )
+        db.session.add(conn)
+        db.session.flush()
+        lc = LinkedCalendar(
+            connection_id=conn.id,
+            google_calendar_id='cal1',
+            summary='Cal',
+            sync_enabled=True,
+        )
+        db.session.add(lc)
+        db.session.commit()
+        with patch('app.google_calendar.sync.process_outbox_for_connection') as outbox_mock, patch(
+            'app.google_calendar.sync.pull_calendar'
+        ) as pull_mock:
+            sync_connection(conn)
+        outbox_mock.assert_not_called()
+        pull_mock.assert_not_called()
+        with patch('app.google_calendar.sync.process_outbox_for_connection') as outbox_mock, patch(
+            'app.google_calendar.sync.pull_calendar'
+        ) as pull_mock:
+            sync_connection(conn, force_pull=True)
+        outbox_mock.assert_not_called()
+        pull_mock.assert_called_once()
+
+
 def test_sync_connection_skips_outbox_when_import_only():
     app = make_app()
     with app.app_context():

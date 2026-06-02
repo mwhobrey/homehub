@@ -18,13 +18,15 @@
 
 - **Legacy mode:** optional shared password (SHA-256), session cookie, rate-limited login.
 - **Firebase mode:** Google sign-in, email allowlist, admin emails, display name mapping, `/auth/session` token exchange.
-- **Google Calendar sync (optional):** Import-first flow when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; setup supports calendar-to-personal-calendar mapping, import color/category mappings (API returns Google `colorId` palette), sync mode (`import_only` default, optional bidirectional), and per-calendar visibility/display controls.
+- **Google Calendar sync (optional):** Import-first flow when `google_calendar.enabled` + Firebase; OAuth at `/auth/google/calendar/start`; setup supports calendar-to-personal-calendar mapping, import color/category mappings (API returns Google `colorId` palette), sync mode (`import_only` default, optional bidirectional, **`manual`** = pull only on explicit Sync/import), and per-calendar visibility/display controls.
+- **Personal calendars:** Household calendar (`owner_uid=__household__`), private calendars with **`PersonalCalendarShare`** ACL (view/write grants); reminders filtered by visible calendar IDs; share UI in calendar setup (`static/js/personal_calendars.js`).
+- **Home reminders widget:** Calendar + category **visibility toggle pills** above the list (`templates/index.html`); hidden state in `localStorage`.
 - **Production compose:** `compose.prod.yml` (localhost bind + proxy network), optional Caddy stack, `docker-entrypoint.sh` copies Firebase SA to `/tmp`.
 - **Hardening:** media domain allowlist + concurrency limits, QR payload encryption, WiFi masking (`test_feature_hardening.py`).
 
 ### Quality
 
-- **`pytest tests/`:** includes `test_school.py`, `test_calendar_import_mappings.py`, `test_reminder_personal_calendar_permissions.py` (calendar import/sync permissions).
+- **`pytest tests/`:** includes `test_school.py`, `test_calendar_import_mappings.py`, `test_personal_calendar_sharing.py`, `test_personal_calendars_api.py`, `test_reminder_personal_calendar_permissions.py` (calendar import/sync permissions).
 - **Docker publish workflow** builds CSS and multi-arch images on `v*` tags.
 
 ## What is incomplete, weak, or operational-only

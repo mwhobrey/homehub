@@ -155,6 +155,64 @@ def test_patch_clears_end_date_for_forever(client):
     assert_dates_for_title(data, 'ThenForever', expected)
 
 
+def test_move_recurring_occurrence_no_duplicate(client):
+    anchor = date(2025, 10, 3)
+    payload = {
+        'date': anchor.strftime('%Y-%m-%d'),
+        'title': 'MoveMeWeekly',
+        'description': 'x',
+        'creator': 'Alice',
+        'recurring': {'interval': 1, 'unit': 'week'},
+    }
+    created = client.post('/api/reminders', json=payload)
+    assert created.status_code == 200
+    rid = created.get_json()['recurring_id']
+    moved = client.patch(
+        f'/api/recurring_rules/{rid}/occurrence',
+        json={
+            'occurrence_date': '2025-10-15',
+            'scope': 'this',
+            'patch': {'date': '2025-10-22'},
+            'creator': 'Alice',
+        },
+    )
+    assert moved.status_code == 200
+    data = list_month(client, 2025, 10)
+    rems = [r for r in data['reminders'] if r['title'] == 'MoveMeWeekly']
+    on_22 = [r for r in rems if r['date'] == '2025-10-22']
+    assert len(on_22) == 1
+    assert '2025-10-15' not in {r['date'] for r in rems}
+
+
+def test_move_reminder_shifts_end_date(client):
+    start = date(2025, 10, 10)
+    end = date(2025, 10, 12)
+    created = client.post(
+        '/api/reminders',
+        json={
+            'date': start.strftime('%Y-%m-%d'),
+            'end_date': end.strftime('%Y-%m-%d'),
+            'title': 'Spanning',
+            'description': '',
+            'creator': 'Alice',
+            'all_day': True,
+        },
+    )
+    assert created.status_code == 200
+    rid = created.get_json()['reminder']['id']
+    moved = client.patch(
+        f'/api/reminders/{rid}',
+        json={'date': '2025-10-17', 'creator': 'Alice'},
+    )
+    assert moved.status_code == 200
+    body = moved.get_json()['reminder']
+    assert body['date'] == '2025-10-17'
+    assert body['end_date'] == '2025-10-19'
+    data = list_month(client, 2025, 10)
+    rems = [r for r in data['reminders'] if r['title'] == 'Spanning']
+    assert {r['date'] for r in rems} == {'2025-10-17'}
+
+
 def test_legacy_frequency_compat(client):
     anchor = date(2025, 10, 3)
     payload = {

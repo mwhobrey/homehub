@@ -90,6 +90,7 @@ Shared partial: `_flash.html`.
 | `js/color_picker.js` | Native color + hex field (`homehubColorPicker`) |
 | `js/calendar_app.js` | `/calendar`: month, week time-grid, agenda, lanes, drag-reschedule, recurring |
 | `js/calendar_sync.js` | Google connect UI, per-calendar lane color picker, write target |
+| `js/personal_calendars.js` | Personal calendar CRUD, share panel, household roster |
 | `js/weather.js` | Open-Meteo client |
 | `js/firebase-auth.js` | Google sign-in flow |
 | `js/tags.js`, `form_tags.js` | Tag UI for shopping/chores/recipes |
@@ -104,7 +105,7 @@ See `app/models.py` for full schema. Key entities:
 - **Collaboration:** `Note`, `ShoppingItem`, `Chore`, `Recipe`, `ExpiryItem`
 - **Files:** `File`, `Media`, `PDF`
 - **Household:** `HomeStatus`, `MemberStatus`, `Notice`
-- **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`, `PersonalCalendar`, `CalendarImportProfile`, `CalendarImportMapping`, `CategoryImportMapping`
+- **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`, `PersonalCalendar`, `PersonalCalendarShare`, `CalendarImportProfile`, `CalendarImportMapping`, `CategoryImportMapping`
 - **School:** `SchoolClass`, `Enrollment`, `Assignment`, `AssignmentCategory`, `Submission`, `SubmissionArtifact`, `GradeEntry`, `AttendanceRecord`, `SchoolAuditLog`
 - **Money:** `RecurringExpense`, `ExpenseEntry`, `app_setting` (key/value, raw SQL)
 - **Utilities:** `ShortURL`, `QRCode`, `GroceryHistory`
@@ -127,7 +128,7 @@ Tags on shopping/chores/recipes: JSON string in `tags` column, parsed via Jinja 
 
 - **No React/Vue store.** Server session (`flask.session`) holds auth state only.
 - **Feature state:** SQLite + occasional `app_setting` keys.
-- **UI state:** Browser localStorage (sidebar collapse), service worker cache, client-side calendar state synced via `/api/reminders`.
+- **UI state:** Browser localStorage (sidebar collapse, reminder calendar/category visibility toggles), service worker cache, client-side calendar state synced via `/api/reminders`.
 - **Context processor** (`__init__.py`): injects `is_authed`, `auth_mode`, `uses_firebase`, `current_user_name`, `current_user_is_admin` into all templates.
 
 ## Key environment variables
@@ -155,7 +156,9 @@ Tags on shopping/chores/recipes: JSON string in `tags` column, parsed via Jinja 
 | `test_security.py` | XSS sanitization, reminder API bootstrap |
 | `test_feature_hardening.py` | Media allowlist, QR WiFi masking, encryption |
 | `test_expenses.py` | Recurring expense generation |
-| `test_recurring_reminders.py` | Reminder recurrence |
+| `test_recurring_reminders.py` | Reminder recurrence + personal calendar on rules |
+| `test_personal_calendar_sharing.py` | Share ACL, visibility filtering |
+| `test_personal_calendars_api.py` | Personal calendar CRUD + shares API |
 | `test_recurring_chores.py` | Chore recurrence |
 | `test_reminder_conversion.py` | Single ↔ recurring conversion |
 | `test_shopping_chores_tags.py` | Tags API + filters |

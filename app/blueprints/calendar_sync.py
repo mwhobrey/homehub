@@ -20,10 +20,15 @@ from ..extensions import limiter
 from ..google_calendar.acl import (
     calendar_connection_active,
     can_view_linked_calendar,
+    can_view_personal_calendar,
+    can_write_personal_calendar,
     get_connection_for_uid,
     google_calendar_enabled,
+    household_member_roster,
+    is_household_personal_calendar,
     owns_linked_calendar,
     resolve_writable_calendar,
+    visible_personal_calendar_ids,
 )
 from ..google_calendar.client import list_calendar_list
 from ..google_calendar.mapper import (
@@ -35,11 +40,13 @@ from ..google_calendar.mapper import (
 from ..google_calendar.sync import ensure_display_prefs_for_viewer, sync_connection
 from ..google_calendar.imports import (
     ImportSelection,
-    ensure_default_personal_calendar,
+    ensure_household_calendar,
+    resolve_personal_calendar_for_import,
     set_connection_sync_mode,
     upsert_category_mappings,
     upsert_import_mapping,
 )
+from ..reminder_categories import merge_import_categories
 from ..models import (
     CalendarConnection,
     CalendarDisplayPref,
@@ -49,6 +56,7 @@ from ..models import (
     CategoryImportMapping,
     LinkedCalendar,
     PersonalCalendar,
+    PersonalCalendarShare,
     Reminder,
     db,
 )
@@ -101,6 +109,49 @@ def _require_firebase_calendar():
     return None
 
 
+def _require_firebase_user():
+    if not uses_firebase():
+        return None, (jsonify({'ok': False, 'error': 'firebase_required'}), 400)
+    uid = session.get('firebase_uid')
+    if not uid:
+        return None, (jsonify({'ok': False, 'error': 'not_authenticated'}), 401)
+    return uid, None
+
+
+def _normalize_personal_calendar_shares(uid: str, raw_shares) -> list[dict]:
+    if not isinstance(raw_shares, list):
+        return []
+    roster = {m['uid'] for m in household_member_roster(uid)}
+    roster.discard(uid)
+    normalized = []
+    seen = set()
+    for item in raw_shares:
+        if not isinstance(item, dict):
+            continue
+        grantee = (item.get('grantee_uid') or '').strip()
+        if not grantee or grantee == uid or grantee not in roster or grantee in seen:
+            continue
+        seen.add(grantee)
+        normalized.append({
+            'grantee_uid': grantee,
+            'can_write': bool(item.get('can_write')),
+        })
+    return normalized
+
+
+def _apply_personal_calendar_shares(pc: PersonalCalendar, uid: str, raw_shares) -> None:
+    if is_household_personal_calendar(pc):
+        return
+    normalized = _normalize_personal_calendar_shares(uid, raw_shares)
+    PersonalCalendarShare.query.filter_by(personal_calendar_id=pc.id).delete()
+    for s in normalized:
+        db.session.add(PersonalCalendarShare(
+            personal_calendar_id=pc.id,
+            grantee_uid=s['grantee_uid'],
+            can_write=s['can_write'],
+        ))
+
+
 def _flow(redirect_uri: str) -> Flow:
     cfg = _gcal_cfg()
     client_config = {
@@ -142,7 +193,16 @@ def _serialize_linked(lc: LinkedCalendar, viewer_uid: str, conn: CalendarConnect
     }
 
 
-def _serialize_personal_calendar(pc: PersonalCalendar) -> dict:
+def _serialize_personal_calendar(pc: PersonalCalendar, viewer_uid: str | None = None) -> dict:
+    viewer_uid = viewer_uid or session.get('firebase_uid')
+    shares = []
+    if viewer_uid and pc.owner_uid == viewer_uid and not is_household_personal_calendar(pc):
+        for s in PersonalCalendarShare.query.filter_by(personal_calendar_id=pc.id).all():
+            shares.append({
+                'grantee_uid': s.grantee_uid,
+                'can_write': bool(s.can_write),
+            })
+    household = is_household_personal_calendar(pc)
     return {
         'id': pc.id,
         'owner_uid': pc.owner_uid,
@@ -150,7 +210,25 @@ def _serialize_personal_calendar(pc: PersonalCalendar) -> dict:
         'color': pc.color,
         'visibility': pc.visibility,
         'archived': bool(pc.archived),
+        'is_household': household,
+        'is_owner': bool(viewer_uid and pc.owner_uid == viewer_uid),
+        'can_edit': can_write_personal_calendar(pc, viewer_uid) if viewer_uid else False,
+        'can_share': bool(viewer_uid and pc.owner_uid == viewer_uid and not household),
+        'shared_with': shares,
     }
+
+
+def _visible_personal_calendars(viewer_uid: str) -> list[PersonalCalendar]:
+    ensure_household_calendar()
+    visible_ids = visible_personal_calendar_ids(viewer_uid)
+    if not visible_ids:
+        return []
+    rows = PersonalCalendar.query.filter(
+        PersonalCalendar.archived.is_(False),
+        PersonalCalendar.id.in_(visible_ids),
+    ).all()
+    rows.sort(key=lambda pc: (0 if is_household_personal_calendar(pc) else 1, (pc.name or '').lower()))
+    return rows
 
 
 def _allow_bidirectional_opt_in() -> bool:
@@ -332,7 +410,7 @@ def google_calendar_oauth_callback():
             primary_lc = lc
         for other_conn in CalendarConnection.query.all():
             ensure_display_prefs_for_viewer(other_conn.firebase_uid, lc)
-    default_pc = ensure_default_personal_calendar(uid)
+    default_pc = ensure_household_calendar()
     for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).all():
         mapping = CalendarImportMapping.query.filter_by(
             connection_id=conn.id,
@@ -406,10 +484,110 @@ def api_calendar_writable():
             'is_default': conn.default_linked_calendar_id == lc.id,
         })
     personal = [
-        _serialize_personal_calendar(pc)
-        for pc in PersonalCalendar.query.filter_by(owner_uid=uid, archived=False).order_by(PersonalCalendar.name.asc()).all()
+        _serialize_personal_calendar(pc, uid)
+        for pc in _visible_personal_calendars(uid)
+        if can_write_personal_calendar(pc, uid)
     ]
     return jsonify({'ok': True, 'calendars': out, 'personal_calendars': personal})
+
+
+@main_bp.route('/api/calendar/personal-calendars', methods=['GET', 'POST'])
+def api_personal_calendars():
+    from ..security import normalize_hex_color, sanitize_text
+
+    uid, err = _require_firebase_user()
+    if err:
+        return err
+    if request.method == 'GET':
+        rows = _visible_personal_calendars(uid)
+        db.session.commit()
+        return jsonify({
+            'ok': True,
+            'calendars': [_serialize_personal_calendar(pc, uid) for pc in rows],
+        })
+    payload = request.get_json(silent=True) or {}
+    name = sanitize_text(payload.get('name', '')).strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'Name required'}), 400
+    color = normalize_hex_color(payload.get('color')) or '#2563eb'
+    pc = PersonalCalendar(owner_uid=uid, name=name[:128], color=color, visibility='private')
+    db.session.add(pc)
+    db.session.flush()
+    if 'shares' in payload:
+        _apply_personal_calendar_shares(pc, uid, payload.get('shares'))
+    db.session.commit()
+    return jsonify({'ok': True, 'calendar': _serialize_personal_calendar(pc, uid)})
+
+
+@main_bp.route('/api/calendar/personal-calendars/<int:pc_id>', methods=['PATCH', 'DELETE'])
+def api_personal_calendar_item(pc_id):
+    from ..security import normalize_hex_color, sanitize_text
+
+    uid, err = _require_firebase_user()
+    if err:
+        return err
+    pc = PersonalCalendar.query.filter_by(id=pc_id, archived=False).first()
+    if not pc or not can_view_personal_calendar(pc, uid):
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    if request.method == 'DELETE':
+        if is_household_personal_calendar(pc):
+            return jsonify({'ok': False, 'error': 'Cannot delete the household calendar'}), 400
+        if pc.owner_uid != uid:
+            return jsonify({'ok': False, 'error': 'Only the owner can delete this calendar'}), 403
+        PersonalCalendarShare.query.filter_by(personal_calendar_id=pc.id).delete()
+        pc.archived = True
+        db.session.commit()
+        return jsonify({'ok': True})
+    if not can_write_personal_calendar(pc, uid):
+        return jsonify({'ok': False, 'error': 'Not allowed'}), 403
+    payload = request.get_json(silent=True) or {}
+    if 'name' in payload:
+        name = sanitize_text(payload.get('name', '')).strip()
+        if not name:
+            return jsonify({'ok': False, 'error': 'Name required'}), 400
+        pc.name = name[:128]
+    if 'color' in payload:
+        raw = payload.get('color')
+        if raw in (None, ''):
+            pc.color = None
+        else:
+            hc = normalize_hex_color(raw)
+            if not hc:
+                return jsonify({'ok': False, 'error': 'Invalid color'}), 400
+            pc.color = hc
+    db.session.commit()
+    return jsonify({'ok': True, 'calendar': _serialize_personal_calendar(pc, uid)})
+
+
+@main_bp.route('/api/calendar/personal-calendars/<int:pc_id>/shares', methods=['PUT'])
+def api_personal_calendar_shares(pc_id):
+    uid, err = _require_firebase_user()
+    if err:
+        return err
+    pc = PersonalCalendar.query.filter_by(id=pc_id, archived=False).first()
+    if not pc or pc.owner_uid != uid:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    if is_household_personal_calendar(pc):
+        return jsonify({'ok': False, 'error': 'Household calendar is shared with everyone'}), 400
+    payload = request.get_json(silent=True) or {}
+    raw_shares = payload.get('shares')
+    if not isinstance(raw_shares, list):
+        return jsonify({'ok': False, 'error': 'shares must be a list'}), 400
+    _apply_personal_calendar_shares(pc, uid, raw_shares)
+    db.session.commit()
+    return jsonify({'ok': True, 'calendar': _serialize_personal_calendar(pc, uid)})
+
+
+@main_bp.route('/api/calendar/household-members')
+def api_calendar_household_members():
+    uid, err = _require_firebase_user()
+    if err:
+        return err
+    members = [
+        m for m in household_member_roster(uid)
+        if m.get('uid') and m['uid'] != uid
+    ]
+    return jsonify({'ok': True, 'members': members})
 
 
 @main_bp.route('/api/calendar/calendars')
@@ -433,8 +611,8 @@ def api_calendar_list():
     personal = []
     if viewer_uid:
         personal = [
-            _serialize_personal_calendar(pc)
-            for pc in PersonalCalendar.query.filter_by(owner_uid=viewer_uid, archived=False).order_by(PersonalCalendar.name.asc()).all()
+            _serialize_personal_calendar(pc, viewer_uid)
+            for pc in _visible_personal_calendars(viewer_uid)
         ]
     return jsonify({'ok': True, 'own': own, 'visible': visible, 'personal_calendars': personal})
 
@@ -536,7 +714,7 @@ def api_calendar_sync_now():
     conn = get_connection_for_uid(uid)
     if not conn or not calendar_connection_active(conn):
         return jsonify({'ok': False, 'error': 'not_connected'}), 400
-    sync_connection(conn)
+    sync_connection(conn, force_pull=True)
     return jsonify({'ok': True, 'last_sync_at': conn.last_sync_at.isoformat() if conn.last_sync_at else None})
 
 
@@ -600,10 +778,11 @@ def api_calendar_import_options():
     conn = get_connection_for_uid(uid)
     if not conn:
         return jsonify({'ok': False, 'error': 'not_connected'}), 400
-    ensure_default_personal_calendar(uid)
+    ensure_household_calendar()
     personal = [
-        _serialize_personal_calendar(pc)
-        for pc in PersonalCalendar.query.filter_by(owner_uid=uid, archived=False).order_by(PersonalCalendar.name.asc()).all()
+        _serialize_personal_calendar(pc, uid)
+        for pc in _visible_personal_calendars(uid)
+        if can_write_personal_calendar(pc, uid)
     ]
     linked = []
     for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).order_by(LinkedCalendar.summary.asc()).all():
@@ -694,6 +873,7 @@ def api_calendar_import_commit():
     if not isinstance(selections, list):
         return jsonify({'ok': False, 'error': 'invalid_payload'}), 400
     saved = 0
+    merged_categories: list[dict] = []
     for s in selections:
         if not isinstance(s, dict):
             continue
@@ -706,43 +886,39 @@ def api_calendar_import_commit():
         if not lc:
             continue
         pc_id = s.get('personal_calendar_id')
-        pc = None
-        if pc_id is not None:
-            try:
-                pc_id = int(pc_id)
-            except (TypeError, ValueError):
-                pc_id = None
-        if pc_id:
-            pc = PersonalCalendar.query.filter_by(id=pc_id, owner_uid=uid).first()
-        if not pc:
-            pc_name = (s.get('new_personal_calendar_name') or '').strip()
-            if pc_name:
-                pc_color = normalize_hex_color(s.get('new_personal_calendar_color')) or '#2563eb'
-                pc = PersonalCalendar(
-                    owner_uid=uid,
-                    name=pc_name[:128],
-                    color=pc_color,
-                    visibility='private',
-                    archived=False,
-                )
-                db.session.add(pc)
-                db.session.flush()
-            else:
-                pc = ensure_default_personal_calendar(uid)
+        try:
+            pc_id = int(pc_id) if pc_id is not None else None
+        except (TypeError, ValueError):
+            pc_id = None
+        pc = resolve_personal_calendar_for_import(
+            uid,
+            pc_id,
+            (s.get('new_personal_calendar_name') or '').strip() or None,
+            s.get('new_personal_calendar_color'),
+        )
+        if not can_write_personal_calendar(pc, uid):
+            return jsonify({'ok': False, 'error': 'Not allowed to use that HomeHub calendar'}), 403
+        raw_shares = s.get('new_personal_calendar_shares')
+        if raw_shares and pc.owner_uid == uid and not is_household_personal_calendar(pc):
+            _apply_personal_calendar_shares(pc, uid, raw_shares)
+        category_rows = s.get('categories') or []
         selection = ImportSelection(
             linked_calendar_id=lc.id,
             personal_calendar_id=pc.id,
             import_enabled=bool(s.get('import_enabled', True)),
             import_color=s.get('import_color'),
-            categories=s.get('categories') or [],
+            categories=category_rows,
         )
         upsert_import_mapping(selection, conn.id)
         upsert_category_mappings(conn.id, lc.id, selection.categories)
+        merged_categories.extend(category_rows)
         lc.sync_enabled = bool(selection.import_enabled)
         saved += 1
+    if merged_categories:
+        merge_import_categories(merged_categories)
     db.session.commit()
     try:
-        sync_connection(conn)
+        sync_connection(conn, force_pull=True)
     except Exception:
         current_app.logger.exception('import commit sync failed')
     return jsonify({'ok': True, 'saved': saved})

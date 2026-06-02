@@ -77,7 +77,9 @@
       personalCalendars = res.personal_calendars || personalCalendars;
     }
     populateWriteSelect();
-    if (personalCalendarSelect) {
+    if (window.homehubPersonalCalendars && personalCalendarSelect) {
+      window.homehubPersonalCalendars.populateSelect(personalCalendarSelect, personalCalendars);
+    } else if (personalCalendarSelect) {
       personalCalendarSelect.innerHTML = '';
       personalCalendars.forEach((c) => {
         const opt = document.createElement('option');
@@ -218,6 +220,12 @@
       const bidirectionalOpt = syncModeSelect.querySelector('option[value="bidirectional"]');
       if (bidirectionalOpt) bidirectionalOpt.disabled = !allowBidirectional;
       syncModeSelect.value = st.sync_mode || 'import_only';
+    }
+    if (syncBtn) {
+      const manual = (st.sync_mode || '') === 'manual';
+      syncBtn.title = manual
+        ? 'Pull Google changes now. Background sync is off while in manual import mode.'
+        : 'Pull latest changes from Google Calendar';
     }
     const data = await window.calendarSyncApi.calendars();
     if (!data.ok) return;
@@ -664,9 +672,12 @@
         if (wizardSummary) wizardSummary.textContent = res.error || 'Import failed';
         return;
       }
-      if (wizardSummary) wizardSummary.textContent = `Saved ${res.saved || 0} calendar mappings and started import.`;
+      if (wizardSummary) wizardSummary.textContent = `Saved ${res.saved || 0} calendar mapping(s) and imported new events.`;
       wizardModal?.close();
       await loadManager();
+      if (window.__calCategoryMgr?.refresh) {
+        await window.__calCategoryMgr.refresh();
+      }
       if (window.homehubCalendarApp && typeof window.homehubCalendarApp.reload === 'function') {
         await window.homehubCalendarApp.reload();
       }

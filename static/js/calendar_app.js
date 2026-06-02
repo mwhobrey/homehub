@@ -68,13 +68,18 @@
   let events = [];
   let recurringRules = [];
   let linkedCalendars = [];
+  let personalCalendars = [];
   const hiddenCats = new Set();
   const hiddenCals = new Set();
+  const hiddenPersonalCals = new Set();
   let editingId = null;
   let editingRuleId = null;
+  let sidebarEventRef = null;
   let dragEventId = null;
   let eventColorPicker = null;
   let pendingMove = null;
+  let moveInFlight = false;
+  let dragSourceEl = null;
   let resizeState = null;
 
   const $ = (id) => document.getElementById(id);
@@ -89,7 +94,6 @@
   const periodLabel = $('calPeriodLabel');
   const filterBar = $('calFilterBar');
   const form = $('calEventForm');
-  const dayList = $('calDayList');
   const selectedLabel = $('calSelectedLabel');
   const recurrenceBox = $('calRecurrenceControls');
   const recurChk = $('calIsRecurring');
@@ -163,7 +167,68 @@
   function passesFilters(e) {
     if (e.category && hiddenCats.has(e.category)) return false;
     if (hiddenCals.has(laneKey(e))) return false;
+    if (e.personal_calendar_id && hiddenPersonalCals.has(String(e.personal_calendar_id))) return false;
     return true;
+  }
+
+  function defaultPersonalCalendarId() {
+    const household = personalCalendars.find((c) => c.is_household);
+    if (household) return String(household.id);
+    if (personalCalendars.length) return String(personalCalendars[0].id);
+    return '';
+  }
+
+  function applyPersonalCalendars(cals) {
+    personalCalendars = cals || [];
+    const sel = $('personalCalendarSelect');
+    const current = sel?.value || '';
+    if (window.homehubPersonalCalendars) {
+      window.homehubPersonalCalendars.populateSelect(sel, personalCalendars, current || null);
+    }
+    renderFilters();
+  }
+
+  async function loadPersonalCalendars() {
+    if (!window.homehubPersonalCalendars) return;
+    try {
+      const res = await window.homehubPersonalCalendars.fetchList();
+      if (res.ok) applyPersonalCalendars(res.calendars);
+    } catch (e) {
+      console.warn('personal calendars', e);
+    }
+  }
+
+  function findEventInList(ref) {
+    if (!ref) return null;
+    if (ref.id != null) {
+      const byId = events.find((e) => e.id === ref.id);
+      if (byId) return byId;
+    }
+    if (ref.title && ref.date) {
+      return events.find(
+        (e) =>
+          e.title === ref.title &&
+          e.date === ref.date &&
+          (e.time || '') === (ref.time || '')
+      );
+    }
+    return null;
+  }
+
+  function refreshSidebarEventForm() {
+    if (!form || form.classList.contains('hidden') || !sidebarEventRef) return;
+    const fresh = findEventInList(sidebarEventRef);
+    if (fresh) {
+      sidebarEventRef = {
+        id: fresh.id,
+        title: fresh.title,
+        date: fresh.date,
+        time: fresh.time || null,
+      };
+      openForm('edit', fresh, { preserveSidebarRef: true });
+    } else if (editingId) {
+      hideForm();
+    }
   }
 
   function filteredEvents() {
@@ -171,10 +236,48 @@
   }
 
   function eventsOn(ymd) {
+    const seen = new Set();
     return filteredEvents().filter((e) => {
       const end = e.end_date || e.date;
-      return ymd >= e.date && ymd <= end;
+      if (ymd < e.date || ymd > end) return false;
+      const key = `${e.id}:${e.date}:${e.time || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
+  }
+
+  function isSameSchedule(ev, patch) {
+    const newDate = patch.date != null ? patch.date : ev.date;
+    const newAllDay = patch.all_day != null ? patch.all_day : ev.all_day;
+    const newTime = patch.time !== undefined ? patch.time : ev.time;
+    if (newDate !== ev.date) return false;
+    if (newAllDay) return !!ev.all_day && !ev.time;
+    if (ev.all_day) return false;
+    return (newTime || null) === (ev.time || null);
+  }
+
+  function optimisticApplyMove(ev, patch) {
+    const idx = events.findIndex((x) => x === ev || x.id === ev.id);
+    if (idx < 0) return;
+    const cur = events[idx];
+    const next = { ...cur, ...patch };
+    if (patch.all_day) {
+      next.time = null;
+      next.end_time = null;
+    }
+    if (patch.date && cur.end_date && cur.date) {
+      const delta = Math.round((parseYmd(patch.date) - parseYmd(cur.date)) / 86400000);
+      const endD = parseYmd(cur.end_date);
+      const oldD = parseYmd(cur.date);
+      if (endD >= oldD) {
+        next.end_date = fmtYmd(addDays(endD, delta));
+      } else if (endD < parseYmd(patch.date)) {
+        next.end_date = patch.date;
+      }
+    }
+    events[idx] = next;
+    render();
   }
 
   function minutesFromTime(t) {
@@ -238,6 +341,7 @@
     events = (res && res.reminders) || [];
     recurringRules = (res && res.recurring_rules) || [];
     render();
+    refreshSidebarEventForm();
   }
 
   function parseAttendeesText(raw) {
@@ -287,7 +391,8 @@
     $('calScopeCancel')?.addEventListener('click', onCancel);
   }
 
-  async function applyMove(ev, patch, scope) {
+  async function applyMove(ev, patch, scope, opts) {
+    const skipReload = opts && opts.skipReload;
     const creator = localStorage.getItem('username') || '';
     if (ev.id < 0 && ev.recurring_id) {
       const res = await window.remindersApi.patchOccurrence(ev.recurring_id, {
@@ -300,7 +405,7 @@
         uiError(res.error || 'Could not move occurrence');
         return false;
       }
-      await loadEvents();
+      if (!skipReload) await loadEvents();
       return true;
     }
     const payload = { ...patch, creator, occurrence_scope: scope || undefined };
@@ -309,30 +414,57 @@
       uiError(res.error || 'Could not move event');
       return false;
     }
-    await loadEvents();
+    if (!skipReload) await loadEvents();
     return true;
   }
 
-  async function rescheduleEvent(ev, patch) {
-    if (ev.recurring_id) {
-      return new Promise((resolve) => {
-        showRecurringScopeModal(async (scope) => {
-          if (!scope) {
-            resolve(false);
-            return;
-          }
-          resolve(await applyMove(ev, patch, scope));
-        });
-      });
+  async function rescheduleEvent(ev, patch, opts) {
+    const fromDrag = opts && opts.fromDrag;
+    if (!ev || moveInFlight) return false;
+    if (isSameSchedule(ev, patch)) {
+      pendingMove = null;
+      return true;
     }
-    const creator = localStorage.getItem('username') || '';
-    const res = await window.remindersApi.update(ev.id, { ...patch, creator });
-    if (!res.ok) {
-      uiError(res.error || 'Could not move event');
-      return false;
+    moveInFlight = true;
+    const snapshot = events.map((e) => ({ ...e }));
+    optimisticApplyMove(ev, patch);
+    try {
+      let ok = false;
+      if (ev.recurring_id) {
+        if (fromDrag) {
+          ok = await applyMove(ev, patch, 'this', { skipReload: true });
+        } else {
+          ok = await new Promise((resolve) => {
+            showRecurringScopeModal(async (scope) => {
+              if (!scope) {
+                resolve(false);
+                return;
+              }
+              resolve(await applyMove(ev, patch, scope, { skipReload: true }));
+            });
+          });
+        }
+      } else {
+        ok = await applyMove(ev, patch, undefined, { skipReload: true });
+      }
+      if (ok) {
+        if (sidebarEventRef && (sidebarEventRef.id === ev.id || sidebarEventRef.title === ev.title)) {
+          sidebarEventRef = {
+            ...sidebarEventRef,
+            date: patch.date != null ? patch.date : sidebarEventRef.date,
+            time: patch.time !== undefined ? patch.time : patch.all_day ? null : sidebarEventRef.time,
+          };
+        }
+        await loadEvents();
+      } else {
+        events = snapshot;
+        render();
+      }
+      return ok;
+    } finally {
+      moveInFlight = false;
+      pendingMove = null;
     }
-    await loadEvents();
-    return true;
   }
 
   function bindDragChip(chip, ev) {
@@ -346,13 +478,24 @@
     }
     chip.draggable = true;
     chip.addEventListener('dragstart', (e) => {
+      if (moveInFlight) {
+        e.preventDefault();
+        return;
+      }
       dragEventId = ev.id;
       pendingMove = { ev };
+      dragSourceEl = chip;
+      chip.classList.add('cal-drag-source');
       e.dataTransfer.setData('text/plain', String(ev.id));
       e.dataTransfer.effectAllowed = 'move';
     });
     chip.addEventListener('dragend', () => {
       dragEventId = null;
+      pendingMove = null;
+      if (dragSourceEl) {
+        dragSourceEl.classList.remove('cal-drag-source');
+        dragSourceEl = null;
+      }
       document.querySelectorAll('.cal-drop-target').forEach((n) => n.classList.remove('cal-drop-target'));
     });
     chip.addEventListener('click', (e) => {
@@ -363,7 +506,7 @@
 
   function bindDropTarget(el, onDrop) {
     el.addEventListener('dragover', (e) => {
-      if (!dragEventId) return;
+      if (!dragEventId || moveInFlight) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       el.classList.add('cal-drop-target');
@@ -372,6 +515,7 @@
     el.addEventListener('drop', async (e) => {
       e.preventDefault();
       el.classList.remove('cal-drop-target');
+      if (moveInFlight) return;
       const id = dragEventId || parseInt(e.dataTransfer.getData('text/plain'), 10);
       dragEventId = null;
       if (!id) return;
@@ -392,10 +536,13 @@
     if (!filterBar) return;
     const parts = [];
     const hasLocal = events.some((e) => !e.linked_calendar_id);
+    if (hasLocal || linkedCalendars.length) {
+      parts.push('<span class="cal-filter-bar__label">Calendars</span>');
+    }
     if (hasLocal) {
       const off = hiddenCals.has(LOCAL_LANE_KEY);
       parts.push(
-        `<button type="button" class="cal-lane-filter px-2 py-0.5 rounded border ${off ? 'opacity-40' : ''}" data-lane="${LOCAL_LANE_KEY}"><span class="inline-block w-2 h-2 rounded-full mr-1 bg-gray-500"></span>Local</button>`
+        `<button type="button" class="cal-filter-pill cal-lane-filter${off ? ' is-off' : ''}" data-lane="${LOCAL_LANE_KEY}"><span class="cal-filter-pill__dot" style="background:#6b7280"></span>Local</button>`
       );
     }
     linkedCalendars.forEach((c) => {
@@ -403,20 +550,31 @@
       const off = hiddenCals.has(key);
       const bg = normHex(c.background_color) || '#2563eb';
       parts.push(
-        `<button type="button" class="cal-lane-filter px-2 py-0.5 rounded border ${off ? 'opacity-40' : ''}" data-lane="${key}" style="border-color:${bg}"><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${bg}"></span>${escapeHtml(c.summary || 'Calendar')}</button>`
+        `<button type="button" class="cal-filter-pill cal-lane-filter${off ? ' is-off' : ''}" data-lane="${key}"><span class="cal-filter-pill__dot" style="background:${bg}"></span>${escapeHtml(c.summary || 'Calendar')}</button>`
       );
     });
     if (categories.length) {
-      parts.push('<span class="text-gray-400 px-1">|</span>');
+      parts.push('<span class="cal-filter-bar__label">Categories</span>');
       categories.forEach((c) => {
         const off = hiddenCats.has(c.key);
         const bg = c.color || '#6b7280';
         parts.push(
-          `<button type="button" class="cal-cat-filter px-2 py-0.5 rounded border ${off ? 'opacity-40' : ''}" data-cat="${escapeHtml(c.key)}" style="border-color:${bg}"><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${bg}"></span>${escapeHtml(c.label || c.key)}</button>`
+          `<button type="button" class="cal-filter-pill cal-cat-filter${off ? ' is-off' : ''}" data-cat="${escapeHtml(c.key)}"><span class="cal-filter-pill__dot" style="background:${bg}"></span>${escapeHtml(c.label || c.key)}</button>`
         );
       });
     }
-    filterBar.innerHTML = parts.join('') || '<span class="text-gray-500 text-xs">No filters</span>';
+    if (personalCalendars.length) {
+      parts.push('<span class="cal-filter-bar__label">HomeHub</span>');
+      personalCalendars.forEach((c) => {
+        const key = String(c.id);
+        const off = hiddenPersonalCals.has(key);
+        const bg = normHex(c.color) || '#2563eb';
+        parts.push(
+          `<button type="button" class="cal-filter-pill cal-pc-filter${off ? ' is-off' : ''}" data-pc="${key}"><span class="cal-filter-pill__dot" style="background:${bg}"></span>${escapeHtml(c.name || 'Calendar')}</button>`
+        );
+      });
+    }
+    filterBar.innerHTML = parts.join('') || '<span class="text-xs text-[var(--muted-text)]">No filters yet — add events or connect Google.</span>';
     filterBar.querySelectorAll('.cal-cat-filter').forEach((btn) => {
       btn.addEventListener('click', () => {
         const k = btn.getAttribute('data-cat');
@@ -430,6 +588,14 @@
         const k = btn.getAttribute('data-lane');
         if (hiddenCals.has(k)) hiddenCals.delete(k);
         else hiddenCals.add(k);
+        render();
+      });
+    });
+    filterBar.querySelectorAll('.cal-pc-filter').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const k = btn.getAttribute('data-pc');
+        if (hiddenPersonalCals.has(k)) hiddenPersonalCals.delete(k);
+        else hiddenPersonalCals.add(k);
         render();
       });
     });
@@ -450,8 +616,8 @@
   function chipHtml(e, extraClass) {
     const col = eventColor(e);
     const tc = eventTextColor(e);
-    const conflict = e.sync_status === 'conflict' ? ' ring-2 ring-amber-400' : '';
-    const importedBadge = e.source === 'google' ? ' <span class="text-[9px] opacity-90">(imported)</span>' : '';
+    const conflict = e.sync_status === 'conflict' ? ' cal-event-chip--conflict' : '';
+    const importedBadge = e.source === 'google' ? ' <span class="opacity-80">↗</span>' : '';
     return `<div class="cal-event-chip ${extraClass || ''}${conflict}" data-ev-id="${e.id}" style="background:${col};color:${tc}" title="${escapeHtml(e.title)}">${escapeHtml(e.title)}${importedBadge}</div>`;
   }
 
@@ -467,11 +633,14 @@
       const evs = eventsOn(ymd).slice(0, 5);
       const more = eventsOn(ymd).length - evs.length;
       const sel = ymd === selectedYmd;
+      const todayCls = ymd === today ? ' is-today' : '';
+      const otherCls = inMonth ? '' : ' is-other-month';
+      const selCls = sel ? ' is-selected' : '';
       cells.push(`
-        <div data-ymd="${ymd}" class="cal-day-cell text-left min-h-[80px] p-1 rounded border text-xs ${inMonth ? 'bg-white dark:bg-slate-800' : 'bg-gray-50 dark:bg-slate-900 opacity-60'} ${sel ? 'ring-2 ring-blue-500' : ''}">
-          <button type="button" class="font-semibold w-full text-left ${ymd === today ? 'text-blue-600' : ''}" data-select-day="${ymd}">${d.getDate()}</button>
-          <div class="space-y-0.5">${evs.map((e) => chipHtml(e)).join('')}</div>
-          ${more > 0 ? `<div class="text-[10px] text-gray-500">+${more} more</div>` : ''}
+        <div data-ymd="${ymd}" class="cal-day-cell${todayCls}${otherCls}${selCls}">
+          <button type="button" class="cal-day-num" data-select-day="${ymd}">${d.getDate()}</button>
+          <div class="cal-day-events">${evs.map((e) => chipHtml(e)).join('')}</div>
+          ${more > 0 ? `<div class="cal-more-label">+${more} more</div>` : ''}
         </div>`);
       d = addDays(d, 1);
     }
@@ -486,9 +655,9 @@
       });
       bindDropTarget(cell, async () => {
         const ev = pendingMove?.ev || events.find((x) => x.id === dragEventId);
-        if (!ev || ev.date === ymd) return;
-        await rescheduleEvent(ev, { date: ymd });
-        pendingMove = null;
+        if (!ev) return;
+        const ymd = cell.getAttribute('data-ymd');
+        await rescheduleEvent(ev, { date: ymd }, { fromDrag: true });
       });
     });
   }
@@ -578,8 +747,11 @@
         const ev = pendingMove?.ev || events.find((x) => x.id === dragEventId);
         if (!ev) return;
         const ymd = col.getAttribute('data-allday-col');
-        await rescheduleEvent(ev, { date: ymd, all_day: true, time: null, end_time: null });
-        pendingMove = null;
+        await rescheduleEvent(
+          ev,
+          { date: ymd, all_day: true, time: null, end_time: null },
+          { fromDrag: true }
+        );
       });
     });
 
@@ -590,8 +762,7 @@
         const ymd = slot.getAttribute('data-drop-ymd');
         const hour = parseInt(slot.getAttribute('data-drop-hour'), 10);
         const time = `${String(hour).padStart(2, '0')}:00`;
-        await rescheduleEvent(ev, { date: ymd, all_day: false, time });
-        pendingMove = null;
+        await rescheduleEvent(ev, { date: ymd, all_day: false, time }, { fromDrag: true });
       });
     });
   }
@@ -602,7 +773,7 @@
       .slice()
       .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
     if (!list.length) {
-      agendaView.innerHTML = '<p class="text-sm text-gray-500">No events in this range.</p>';
+      agendaView.innerHTML = '<p class="text-sm text-[var(--muted-text)] py-4 text-center">No events in this range.</p>';
       return;
     }
     let lastDate = '';
@@ -610,7 +781,7 @@
     list.forEach((e) => {
       if (e.date !== lastDate) {
         lastDate = e.date;
-        html += `<div class="text-xs font-bold text-gray-600 mt-2">${parseYmd(e.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>`;
+        html += `<div class="cal-agenda-date">${parseYmd(e.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>`;
       }
       const range =
         e.end_date && e.end_date !== e.date
@@ -621,9 +792,12 @@
               ? fmtTime(e.time) + (e.end_time ? ' – ' + fmtTime(e.end_time) : '')
               : '';
       const col = eventColor(e);
-      html += `<button type="button" class="w-full text-left flex gap-2 items-start p-2 rounded border hover:bg-gray-50 dark:hover:bg-slate-800" data-edit="${e.id}">
-        <span class="w-2 h-2 rounded-full mt-1 flex-shrink-0" style="background:${col}"></span>
-        <span><span class="font-semibold text-sm">${escapeHtml(e.title)}</span>${e.source === 'google' ? ' <span class="text-[10px] text-blue-600">imported</span>' : ''}${e.sync_status === 'conflict' ? ' <span class="text-amber-600 text-[10px]">sync conflict</span>' : ''}<br><span class="text-xs text-gray-500">${escapeHtml(range)}</span></span>
+      const badges =
+        (e.source === 'google' ? ' <span class="text-[10px] opacity-70">imported</span>' : '') +
+        (e.sync_status === 'conflict' ? ' <span class="text-amber-600 text-[10px]">sync conflict</span>' : '');
+      html += `<button type="button" class="cal-agenda-item" data-edit="${e.id}">
+        <span class="cal-agenda-item__dot" style="background:${col}"></span>
+        <span class="min-w-0"><span class="font-semibold text-sm">${escapeHtml(e.title)}</span>${badges}<br><span class="text-xs text-[var(--muted-text)]">${escapeHtml(range)}</span></span>
       </button>`;
     });
     agendaView.innerHTML = html;
@@ -636,41 +810,21 @@
     });
   }
 
-  function renderDayList() {
-    if (!dayList) return;
-    const evs = eventsOn(selectedYmd);
-    if (!evs.length) {
-      dayList.innerHTML = '<p class="text-xs text-gray-500">No events this day.</p>';
-      return;
+  function render() {
+    renderPeriodLabel();
+    renderFilters();
+    if (view === 'month') renderMonth();
+    else if (view === 'week') renderWeekTimeGrid();
+    else renderAgenda();
+  }
+
+  function selectDay(ymd) {
+    selectedYmd = ymd;
+    if (selectedLabel) {
+      const d = parseYmd(ymd);
+      selectedLabel.innerHTML = `<span class="cal-selected-chip"><i class="fa-regular fa-calendar text-xs" aria-hidden="true"></i>${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>`;
     }
-    dayList.innerHTML = evs
-      .map((e) => {
-        const meta = e.all_day ? 'All day' : e.time ? fmtTime(e.time) : 'No time';
-        const col = eventColor(e);
-        return `<div class="flex items-center justify-between gap-2 p-2 rounded border text-xs">
-          <button type="button" class="text-left flex-1 flex gap-2 items-start" data-edit="${e.id}">
-            <span class="w-2 h-2 rounded-full mt-1 flex-shrink-0" style="background:${col}"></span>
-            <span><strong>${escapeHtml(e.title)}</strong>${e.source === 'google' ? ' <span class="text-[10px] text-blue-600">imported</span>' : ''}<br><span class="text-gray-500">${escapeHtml(meta)}</span></span>
-          </button>
-          <button type="button" class="text-red-600" data-del="${e.id}" title="Delete">✕</button>
-        </div>`;
-      })
-      .join('');
-    dayList.querySelectorAll('[data-edit]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = parseInt(b.getAttribute('data-edit'), 10);
-        const item = events.find((x) => x.id === id);
-        if (item) openForm('edit', item);
-      });
-    });
-    dayList.querySelectorAll('[data-del]').forEach((b) => {
-      b.addEventListener('click', async () => {
-        const id = parseInt(b.getAttribute('data-del'), 10);
-        if (!id || id < 0 || !(await uiConfirm('Delete this event?', { title: 'Delete Event', okText: 'Delete', cancelText: 'Cancel' }))) return;
-        await window.remindersApi.removeMany([id], localStorage.getItem('username') || '');
-        await loadEvents();
-      });
-    });
+    if (view === 'month') renderMonth();
   }
 
   function setView(v) {
@@ -683,22 +837,6 @@
     if (weekView) weekView.classList.toggle('hidden', v !== 'week');
     if (agendaView) agendaView.classList.toggle('hidden', v !== 'agenda');
     loadEvents();
-  }
-
-  function render() {
-    renderPeriodLabel();
-    renderFilters();
-    if (view === 'month') renderMonth();
-    else if (view === 'week') renderWeekTimeGrid();
-    else renderAgenda();
-    renderDayList();
-  }
-
-  function selectDay(ymd) {
-    selectedYmd = ymd;
-    if (selectedLabel) selectedLabel.textContent = `Selected: ${parseYmd(ymd).toLocaleDateString()}`;
-    renderDayList();
-    if (view === 'month') renderMonth();
   }
 
   function toggleTimedFields(allDay) {
@@ -718,21 +856,36 @@
     }
   }
 
-  function openForm(mode, data) {
+  function setFormReadOnly(readOnly) {
     if (!form) return;
+    form.querySelectorAll('input, select, textarea, button[type="submit"]').forEach((el) => {
+      if (el.id === 'calFormCancel') return;
+      el.disabled = readOnly;
+    });
+    if (eventColorPicker && eventColorPicker.setDisabled) eventColorPicker.setDisabled(readOnly);
+  }
+
+  function openForm(mode, data, options) {
+    if (!form) return;
+    const preserveRef = options && options.preserveSidebarRef;
     form.classList.remove('hidden');
-    form.reset();
-    editingId = null;
-    editingRuleId = null;
+    if (!preserveRef) {
+      form.reset();
+      editingId = null;
+      editingRuleId = null;
+      sidebarEventRef = null;
+      form.querySelector('[name=id]').value = '';
+    }
     conflictPanel?.classList.add('hidden');
-    form.querySelector('[name=id]').value = '';
     const dateInput = form.querySelector('[name=date]');
     const tzSel = $('calTimeZoneSelect');
     const attInput = $('calAttendeesInput');
+    const pcSel = $('personalCalendarSelect');
     if (form && window.homehubRecurrence) window.homehubRecurrence.bind(form);
     if (mode === 'edit' && data) {
       if (data.isRule && data.id) {
         editingRuleId = data.id;
+        sidebarEventRef = null;
         form.querySelector('[name=title]').value = data.title || '';
         form.querySelector('[name=description]').value = data.description || '';
         recurChk.checked = true;
@@ -747,10 +900,19 @@
         if (data.time) form.querySelector('[name=time]').value = data.time;
         if (data.category) form.querySelector('[name=category]').value = data.category;
         if (eventColorPicker) eventColorPicker.setValue(data.color || null);
+        setFormReadOnly(false);
         return;
       }
       editingId = data.id > 0 ? data.id : null;
       if (!editingId) return;
+      if (!preserveRef) {
+        sidebarEventRef = {
+          id: data.id,
+          title: data.title,
+          date: data.date,
+          time: data.time || null,
+        };
+      }
       form.querySelector('[name=id]').value = data.id;
       form.querySelector('[name=title]').value = data.title || '';
       form.querySelector('[name=description]').value = data.description || '';
@@ -763,6 +925,11 @@
       if (data.category && form.querySelector('[name=category]')) {
         form.querySelector('[name=category]').value = data.category;
       }
+      if (data.personal_calendar_id && pcSel) {
+        pcSel.value = String(data.personal_calendar_id);
+      } else if (pcSel && personalCalendars.length && !pcSel.value) {
+        pcSel.value = defaultPersonalCalendarId();
+      }
       if (eventColorPicker) eventColorPicker.setValue(data.color || eventColor(data));
       if (data.linked_calendar_id && window.homehubCalendarSync) {
         window.homehubCalendarSync.setWriteCalendarId(data.linked_calendar_id);
@@ -773,14 +940,20 @@
         conflictPanel.classList.remove('hidden');
         conflictPanel.dataset.conflictId = String(data.id);
       }
+      setFormReadOnly(data.can_edit === false);
     } else {
+      sidebarEventRef = null;
       dateInput.value = selectedYmd;
+      if (pcSel && personalCalendars.length) {
+        pcSel.value = defaultPersonalCalendarId();
+      }
       if (eventColorPicker) {
         const catSel = form.querySelector('[name=category]');
         const opt = catSel && catSel.selectedOptions[0];
         const dc = opt && opt.getAttribute('data-color');
         eventColorPicker.setValue(dc || '#2563eb');
       }
+      setFormReadOnly(false);
     }
     const allDay = form.querySelector('[name=all_day]').checked;
     toggleTimedFields(allDay);
@@ -794,6 +967,8 @@
     conflictPanel?.classList.add('hidden');
     editingId = null;
     editingRuleId = null;
+    sidebarEventRef = null;
+    setFormReadOnly(false);
   }
 
   document.querySelectorAll('.cal-view-btn').forEach((btn) => {
@@ -836,6 +1011,19 @@
     if (dc) eventColorPicker.setValue(dc);
   });
 
+  function resolvePersonalCalendarId() {
+    const sel = $('personalCalendarSelect');
+    if (window.homehubCalendarSync && window.homehubCalendarSync.getPersonalCalendarId) {
+      const id = window.homehubCalendarSync.getPersonalCalendarId();
+      if (id) return id;
+    }
+    if (sel && sel.value) {
+      const v = parseInt(sel.value, 10);
+      if (Number.isFinite(v)) return v;
+    }
+    return null;
+  }
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -867,11 +1055,9 @@
       if (window.homehubCalendarSync) {
         const wcid = window.homehubCalendarSync.getWriteCalendarId();
         if (wcid) payload.linked_calendar_id = wcid;
-        const pcid = window.homehubCalendarSync.getPersonalCalendarId
-          ? window.homehubCalendarSync.getPersonalCalendarId()
-          : null;
-        if (pcid) payload.personal_calendar_id = pcid;
       }
+      const pcid = resolvePersonalCalendarId();
+      if (pcid) payload.personal_calendar_id = pcid;
       const res = await window.remindersApi.create(payload);
       if (!res.ok) {
         uiError(res.error || 'Save failed');
@@ -927,11 +1113,9 @@
     if (window.homehubCalendarSync) {
       const wcid = window.homehubCalendarSync.getWriteCalendarId();
       if (wcid) payload.linked_calendar_id = wcid;
-      const pcid = window.homehubCalendarSync.getPersonalCalendarId
-        ? window.homehubCalendarSync.getPersonalCalendarId()
-        : null;
-      if (pcid) payload.personal_calendar_id = pcid;
     }
+    const pcid = resolvePersonalCalendarId();
+    if (pcid) payload.personal_calendar_id = pcid;
     let res;
     if (editingId) res = await window.remindersApi.update(editingId, { ...payload, creator });
     else res = await window.remindersApi.create({ ...payload, creator });
@@ -959,10 +1143,7 @@
       const t = tab.getAttribute('data-tab');
       document.querySelectorAll('.cal-side-tab').forEach((x) => {
         const on = x.getAttribute('data-tab') === t;
-        x.classList.toggle('border-b-2', on);
-        x.classList.toggle('border-blue-600', on);
-        x.classList.toggle('text-blue-600', on);
-        x.classList.toggle('text-gray-500', !on);
+        x.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
       $('calSideEvent')?.classList.toggle('hidden', t !== 'event');
       $('calSideSetup')?.classList.toggle('hidden', t !== 'setup');
@@ -1037,11 +1218,21 @@
   window.homehubCalendarApp = {
     reload: async () => {
       await loadLinkedCalendars();
+      await loadPersonalCalendars();
       await loadEvents();
     },
     onCalendarsUpdated: loadLinkedCalendars,
     setCategories: applyCategories,
+    setPersonalCalendars: applyPersonalCalendars,
   };
+
+  if (window.homehubPersonalCalendars && $('calPersonalCalendarManager')) {
+    window.__calPersonalCalendarMgr = window.homehubPersonalCalendars.mountManager($('calPersonalCalendarManager'), {
+      onChange: applyPersonalCalendars,
+    });
+  } else if ($('calPersonalCalendarHint')) {
+    $('calPersonalCalendarHint').classList.remove('hidden');
+  }
 
   if (window.homehubReminderCategories && $('calCategoryManager')) {
     window.__calCategoryMgr = window.homehubReminderCategories.mountManager($('calCategoryManager'), {
@@ -1068,6 +1259,11 @@
   selectDay(selectedYmd);
   (async () => {
     await loadCategories();
+    if (window.__calPersonalCalendarMgr?.ready) {
+      await window.__calPersonalCalendarMgr.ready;
+    } else {
+      await loadPersonalCalendars();
+    }
     await loadLinkedCalendars();
     await loadEvents();
   })();

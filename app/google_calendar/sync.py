@@ -16,7 +16,7 @@ from ..models import (
 )
 from ..user_context import current_display_name
 from .client import CalendarCredentialsError, get_calendar_service
-from .imports import get_category_mapping, get_connection_sync_mode
+from .imports import get_category_mapping, get_connection_sync_mode, SYNC_MODE_MANUAL
 from .mapper import event_to_reminder_fields, infer_source_category
 from .writes import process_outbox_for_connection
 
@@ -173,12 +173,15 @@ def _upsert_event(lc: LinkedCalendar, conn: CalendarConnection, event: dict, tz:
     db.session.commit()
 
 
-def sync_connection(conn: CalendarConnection) -> None:
+def sync_connection(conn: CalendarConnection, *, force_pull: bool = False) -> None:
     if conn.id in _sync_locks:
         return
     _sync_locks.add(conn.id)
     try:
-        if get_connection_sync_mode(conn) == 'bidirectional':
+        mode = get_connection_sync_mode(conn)
+        if mode == SYNC_MODE_MANUAL and not force_pull:
+            return
+        if mode == 'bidirectional':
             process_outbox_for_connection(conn.id)
         for lc in LinkedCalendar.query.filter_by(connection_id=conn.id).all():
             if not lc.sync_enabled:

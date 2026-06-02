@@ -15,7 +15,12 @@ from ..security import normalize_hex_color
 
 SYNC_MODE_IMPORT_ONLY = "import_only"
 SYNC_MODE_BIDIRECTIONAL = "bidirectional"
-ALLOWED_SYNC_MODES = {SYNC_MODE_IMPORT_ONLY, SYNC_MODE_BIDIRECTIONAL}
+SYNC_MODE_MANUAL = "manual"
+ALLOWED_SYNC_MODES = {SYNC_MODE_IMPORT_ONLY, SYNC_MODE_BIDIRECTIONAL, SYNC_MODE_MANUAL}
+
+HOUSEHOLD_OWNER_UID = "__household__"
+DEFAULT_HOUSEHOLD_NAME = "Household"
+DEFAULT_HOUSEHOLD_COLOR = "#2563eb"
 
 
 @dataclass
@@ -34,7 +39,34 @@ def normalize_sync_mode(raw: str | None) -> str:
     return SYNC_MODE_IMPORT_ONLY
 
 
+def ensure_household_calendar(name: str | None = None) -> PersonalCalendar:
+    """Single shared calendar visible to every household member."""
+    row = PersonalCalendar.query.filter_by(
+        owner_uid=HOUSEHOLD_OWNER_UID,
+        visibility="household",
+        archived=False,
+    ).first()
+    if row:
+        return row
+    row = PersonalCalendar(
+        owner_uid=HOUSEHOLD_OWNER_UID,
+        name=(name or DEFAULT_HOUSEHOLD_NAME)[:128],
+        color=DEFAULT_HOUSEHOLD_COLOR,
+        visibility="household",
+        archived=False,
+    )
+    db.session.add(row)
+    db.session.flush()
+    return row
+
+
+def default_event_personal_calendar_id() -> int:
+    """Default bucket for new local events (household-shared)."""
+    return ensure_household_calendar().id
+
+
 def ensure_default_personal_calendar(uid: str, name: str = "My Calendar") -> PersonalCalendar:
+    """Per-user private calendar (legacy helper — prefer household for new events)."""
     row = (
         PersonalCalendar.query.filter_by(owner_uid=uid, archived=False)
         .order_by(PersonalCalendar.id.asc())
@@ -94,6 +126,41 @@ def upsert_import_mapping(selection: ImportSelection, connection_id: int) -> Cal
     row.import_color = normalize_hex_color(selection.import_color) if selection.import_color else None
     row.updated_at = datetime.utcnow()
     return row
+
+
+def resolve_personal_calendar_for_import(
+    uid: str,
+    pc_id: int | None,
+    new_name: str | None,
+    new_color: str | None,
+) -> PersonalCalendar:
+    """Reuse an existing personal calendar by id or name; create only when needed."""
+    from sqlalchemy import func
+
+    pc: PersonalCalendar | None = None
+    if pc_id:
+        pc = PersonalCalendar.query.filter_by(id=pc_id, archived=False).first()
+    if not pc:
+        name = (new_name or "").strip()[:128]
+        if name:
+            pc = PersonalCalendar.query.filter(
+                PersonalCalendar.owner_uid == uid,
+                PersonalCalendar.archived.is_(False),
+                func.lower(PersonalCalendar.name) == name.lower(),
+            ).first()
+            if not pc:
+                pc = PersonalCalendar(
+                    owner_uid=uid,
+                    name=name,
+                    color=normalize_hex_color(new_color) or "#2563eb",
+                    visibility="private",
+                    archived=False,
+                )
+                db.session.add(pc)
+                db.session.flush()
+    if not pc:
+        pc = ensure_household_calendar()
+    return pc
 
 
 def upsert_category_mappings(connection_id: int, linked_calendar_id: int, categories: list[dict]) -> None:

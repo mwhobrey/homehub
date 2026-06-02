@@ -2,19 +2,7 @@
 {% block title %}Calendar — {{ config.instance_name }}{% endblock %}
 {% block extra_head %}
 <style>
-  .cal-event-chip { font-size: 10px; line-height: 1.2; padding: 1px 4px; border-radius: 4px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; }
-  .cal-event-chip:active { cursor: grabbing; }
-  .cal-day-cell.cal-drop-target { outline: 2px dashed #2563eb; outline-offset: -2px; }
-  .cal-week-time-grid { display: grid; grid-template-columns: 3rem repeat(7, minmax(0, 1fr)); }
-  .cal-week-allday { display: grid; grid-template-columns: 3rem repeat(7, minmax(0, 1fr)); min-height: 2.5rem; border-bottom: 1px solid rgba(0,0,0,.08); }
-  .cal-week-hour-label { font-size: 10px; color: #6b7280; text-align: right; padding: 2px 4px; border-top: 1px solid rgba(0,0,0,.06); height: 48px; box-sizing: border-box; }
-  .cal-week-day-col { position: relative; border-left: 1px solid rgba(0,0,0,.06); min-height: 1152px; }
-  .cal-week-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid rgba(0,0,0,.05); pointer-events: none; }
-  .cal-week-event { position: absolute; left: 2px; right: 2px; border-radius: 4px; font-size: 10px; padding: 2px 4px 6px; overflow: hidden; cursor: grab; z-index: 2; line-height: 1.2; }
-  .cal-resize-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; opacity: 0.7; }
-  .cal-week-event.conflict { box-shadow: 0 0 0 2px #f59e0b; }
-  .cal-week-slot-drop { position: absolute; left: 0; right: 0; height: 48px; z-index: 1; }
-  /* Import wizard layout — inlined so it works before npm run build:css / image rebuild */
+  /* Import wizard + calendar page — inlined so layout works before npm run build:css */
   #calendarImportModal.cal-import-modal { width: min(72rem, calc(100vw - 2rem)); max-height: min(92vh, 56rem); }
   #calendarImportModal .cal-import-modal__body { max-height: min(68vh, 44rem); }
   #calendarImportSourceList.cal-import-source-grid { display: grid; gap: 0.625rem; grid-template-columns: 1fr; }
@@ -26,118 +14,160 @@
   .cal-cat-row { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border-radius: 0.625rem; border: 1px solid var(--input-border); background: var(--secondary-bg); }
   .cal-cat-row__head { display: flex; align-items: flex-start; gap: 0.5rem; }
   .cal-cat-row__title { min-width: 0; flex: 1; }
+  .cal-layout { display: grid; gap: 1rem; }
+  @media (min-width: 1280px) { .cal-layout { grid-template-columns: minmax(0, 1fr) min(22rem, 32vw); align-items: start; } }
+  .cal-main.card { padding: 0; overflow: hidden; }
+  .cal-main-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem 1rem; border-bottom: 1px solid var(--input-border); background: var(--secondary-bg); }
+  .cal-nav-cluster { display: inline-flex; align-items: center; gap: 0.25rem; border: 1px solid var(--input-border); border-radius: 0.625rem; background: var(--input-bg); padding: 0.125rem; }
+  .cal-nav-btn { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border: 0; border-radius: 0.5rem; background: transparent; color: var(--text-color); cursor: pointer; }
+  .cal-period-label { font-size: 1.125rem; font-weight: 700; min-width: 9rem; text-align: center; margin: 0; }
+  .cal-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; padding: 0.625rem 1rem; border-bottom: 1px solid var(--input-border); }
+  .cal-filter-pill { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.3125rem 0.625rem; border-radius: 9999px; border: 1px solid var(--input-border); background: var(--input-bg); font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+  .cal-filter-pill.is-off { opacity: 0.45; }
+  .cal-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.375rem; min-height: 28rem; }
+  .cal-weekday-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.375rem; margin-bottom: 0.375rem; }
+  .cal-day-cell { display: flex; flex-direction: column; gap: 0.25rem; min-height: 5.5rem; padding: 0.375rem; border-radius: 0.625rem; border: 1px solid var(--input-border); background: var(--input-bg); text-align: left; font-size: 0.75rem; }
+  .cal-day-cell.is-other-month { opacity: 0.5; background: var(--secondary-bg); }
+  .cal-day-cell.is-selected { border-color: var(--primary-color); box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 30%, transparent); }
+  .cal-day-cell.is-today .cal-day-num { background: var(--primary-color); color: #fff; }
+  .cal-sidebar-panel.card { padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: calc(100vh - 2rem); }
+  @media (min-width: 1280px) { .cal-sidebar-panel { position: sticky; top: 1rem; } }
+  .cal-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .cal-event-form .cal-field-input,
+  .cal-event-form select,
+  .cal-event-form textarea { background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 0.375rem; }
+  .cal-event-form .cal-field-input::placeholder,
+  .cal-event-form textarea::placeholder { color: var(--muted-text); opacity: 0.85; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="max-w-[1600px] mx-auto">
-  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-    <h1 class="text-2xl font-bold flex items-center gap-2"><i class="fa-solid fa-calendar-days text-blue-600"></i> Calendar</h1>
-    <div class="flex flex-wrap items-center gap-2">
-      <div class="cal-segmented" role="tablist" aria-label="Calendar view">
-        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="month" aria-pressed="true">Month</button>
-        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="week" aria-pressed="false">Week</button>
-        <button type="button" class="cal-segmented-btn cal-view-btn" data-view="agenda" aria-pressed="false">Agenda</button>
-      </div>
-      <button type="button" id="calToday" class="btn btn-secondary text-sm py-2">Today</button>
-      <div class="inline-flex items-center gap-1 rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] px-1">
-        <button type="button" id="calPrev" class="h-9 w-9 rounded-md hover:bg-[var(--secondary-bg)]" aria-label="Previous period"><i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i></button>
-        <span id="calPeriodLabel" class="font-semibold text-sm min-w-[9.5rem] text-center px-1 tabular-nums"></span>
-        <button type="button" id="calNext" class="h-9 w-9 rounded-md hover:bg-[var(--secondary-bg)]" aria-label="Next period"><i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i></button>
-      </div>
-      <button type="button" id="calSyncNow" class="btn btn-secondary text-sm py-2"><i class="fa-solid fa-rotate text-xs" aria-hidden="true"></i> Sync</button>
-    </div>
-  </div>
+  <header class="cal-page-header flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold flex items-center gap-2 m-0">
+      <i class="fa-solid fa-calendar-days text-[var(--primary-color)]" aria-hidden="true"></i>
+      Calendar
+    </h1>
+  </header>
 
-  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-    <div class="xl:col-span-2 space-y-4">
-      <div class="card p-4">
-        <div id="calFilterBar" class="flex flex-wrap gap-2 mb-3 text-xs"></div>
+  <div class="cal-layout mt-4">
+    <section class="cal-main card" aria-label="Calendar grid">
+      <div class="cal-main-head">
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="cal-nav-cluster" aria-label="Navigate period">
+            <button type="button" id="calPrev" class="cal-nav-btn" aria-label="Previous period">
+              <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
+            </button>
+            <h2 id="calPeriodLabel" class="cal-period-label tabular-nums"></h2>
+            <button type="button" id="calNext" class="cal-nav-btn" aria-label="Next period">
+              <i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
+            </button>
+          </div>
+          <button type="button" id="calToday" class="btn btn-secondary text-sm py-2">Today</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="cal-segmented" role="tablist" aria-label="Calendar view">
+            <button type="button" class="cal-segmented-btn cal-view-btn" data-view="month" aria-pressed="true">Month</button>
+            <button type="button" class="cal-segmented-btn cal-view-btn" data-view="week" aria-pressed="false">Week</button>
+            <button type="button" class="cal-segmented-btn cal-view-btn" data-view="agenda" aria-pressed="false">Agenda</button>
+          </div>
+          <button type="button" id="calSyncNow" class="btn btn-secondary text-sm py-2">
+            <i class="fa-solid fa-rotate text-xs" aria-hidden="true"></i> Sync
+          </button>
+        </div>
+      </div>
+
+      <div id="calFilterBar" class="cal-filter-bar" role="group" aria-label="Show or hide calendars and categories"></div>
+
+      <div class="cal-main-body">
         <div id="calMonthView">
-          <div id="calWeekdayRow" class="grid grid-cols-7 gap-1 text-xs font-semibold text-gray-600 mb-1"></div>
-          <div id="calMonthGrid" class="grid grid-cols-7 gap-1 min-h-[360px]"></div>
+          <div id="calWeekdayRow" class="cal-weekday-row"></div>
+          <div id="calMonthGrid" class="cal-month-grid"></div>
         </div>
         <div id="calWeekView" class="hidden">
-          <div class="overflow-auto max-h-[680px] border rounded bg-white dark:bg-slate-800">
+          <div class="cal-week-shell">
             <div id="calWeekTimeGrid"></div>
           </div>
         </div>
-        <div id="calAgendaView" class="hidden max-h-[520px] overflow-auto space-y-2"></div>
+        <div id="calAgendaView" class="cal-agenda-view hidden"></div>
       </div>
-    </div>
+    </section>
 
-    <div class="space-y-4">
-      <div class="card p-4">
-        <div class="flex border-b mb-3 text-sm font-semibold">
-          <button type="button" class="cal-side-tab px-3 py-2 border-b-2 border-blue-600 text-blue-600" data-tab="event">Event</button>
-          <button type="button" class="cal-side-tab px-3 py-2 text-gray-500" data-tab="setup">Setup</button>
+    <aside class="cal-sidebar-panel card" aria-label="Event details and setup">
+      <div class="cal-sidebar-tabs">
+        <div class="cal-segmented" role="tablist" aria-label="Sidebar panel">
+          <button type="button" class="cal-segmented-btn cal-side-tab" data-tab="event" aria-pressed="true" role="tab">Event</button>
+          <button type="button" class="cal-segmented-btn cal-side-tab" data-tab="setup" aria-pressed="false" role="tab">Setup</button>
         </div>
+      </div>
 
-        <div id="calSideEvent">
-          <p class="text-xs text-gray-500 mb-2" id="calSelectedLabel">Select a day or click Add event.</p>
+      <div class="cal-sidebar-scroll">
+      <div class="cal-sidebar-body">
+        <div id="calSideEvent" role="tabpanel">
+          <p class="text-xs text-[var(--muted-text)] mb-2" id="calSelectedLabel">Select a day or click Add event.</p>
           <button type="button" id="calAddEvent" class="btn btn-primary text-sm w-full mb-3">Add event</button>
-          <form id="calEventForm" class="hidden space-y-3 text-sm">
+          <form id="calEventForm" class="cal-event-form hidden space-y-3 text-sm">
             <input type="hidden" name="id" value="">
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Title</label>
-              <input name="title" required class="w-full h-9 border rounded px-2" placeholder="Event title">
+              <input name="title" required class="cal-field-input w-full h-9 px-2" placeholder="Event title">
             </div>
             <label class="inline-flex items-center gap-2 text-xs">
               <input type="checkbox" name="all_day" class="rounded"> All day
             </label>
             <div class="grid grid-cols-2 gap-2">
-              <div>
+              <div class="cal-field">
                 <label class="block text-xs font-semibold mb-1">Start date</label>
-                <input name="date" type="date" required class="w-full h-9 border rounded px-2">
+                <input name="date" type="date" required class="cal-field-input w-full h-9 px-2">
               </div>
-              <div class="cal-timed-only">
+              <div class="cal-field cal-timed-only">
                 <label class="block text-xs font-semibold mb-1">Start time</label>
-                <input name="time" type="time" class="w-full h-9 border rounded px-2">
+                <input name="time" type="time" class="cal-field-input w-full h-9 px-2">
               </div>
             </div>
             <div class="grid grid-cols-2 gap-2">
-              <div>
+              <div class="cal-field">
                 <label class="block text-xs font-semibold mb-1">End date</label>
-                <input name="end_date" type="date" class="w-full h-9 border rounded px-2">
+                <input name="end_date" type="date" class="cal-field-input w-full h-9 px-2">
               </div>
-              <div class="cal-timed-only">
+              <div class="cal-field cal-timed-only">
                 <label class="block text-xs font-semibold mb-1">End time</label>
-                <input name="end_time" type="time" class="w-full h-9 border rounded px-2">
+                <input name="end_time" type="time" class="cal-field-input w-full h-9 px-2">
               </div>
+            </div>
+            <div id="personalCalendarRow" class="cal-field">
+              <label class="block text-xs font-semibold mb-1" for="personalCalendarSelect">HomeHub calendar</label>
+              <select id="personalCalendarSelect" class="cal-field-input w-full h-9 px-2"></select>
+              <p class="text-[11px] text-[var(--muted-text)] mt-1">Local calendar bucket — used for organization and Google import routing.</p>
             </div>
             {% if google_calendar_enabled %}
-            <div id="writeCalendarRow">
-              <label class="block text-xs font-semibold mb-1" for="writeCalendarSelect">Save to calendar</label>
-              <select id="writeCalendarSelect" class="w-full h-9 border rounded px-2"></select>
-              <p id="writeCalendarHint" class="text-[11px] text-gray-500 mt-1"></p>
+            <div id="writeCalendarRow" class="cal-field hidden">
+              <label class="block text-xs font-semibold mb-1" for="writeCalendarSelect">Sync to Google (optional)</label>
+              <select id="writeCalendarSelect" class="cal-field-input w-full h-9 px-2"></select>
+              <p id="writeCalendarHint" class="text-[11px] text-[var(--muted-text)] mt-1"></p>
             </div>
             {% endif %}
-            <div id="personalCalendarRow">
-              <label class="block text-xs font-semibold mb-1" for="personalCalendarSelect">HomeHub calendar</label>
-              <select id="personalCalendarSelect" class="w-full h-9 border rounded px-2"></select>
-              <p class="text-[11px] text-gray-500 mt-1">Imported events are routed into this HomeHub calendar.</p>
-            </div>
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Category</label>
-              <select name="category" id="calCategorySelect" class="w-full h-9 border rounded px-2">
+              <select name="category" id="calCategorySelect" class="cal-field-input w-full h-9 px-2">
                 <option value="">—</option>
                 {% for c in reminder_categories %}
                 <option value="{{ c.key }}" data-color="{{ c.color or '' }}">{{ c.label }}</option>
                 {% endfor %}
               </select>
             </div>
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Event color</label>
               <div id="calEventColorPicker"></div>
-              <p class="text-[10px] text-gray-500 mt-1">Overrides category and calendar lane colors when set.</p>
+              <p class="text-[10px] text-[var(--muted-text)] mt-1">Overrides category and calendar colors when set.</p>
             </div>
             <label class="inline-flex items-center gap-2 text-xs">
               <input type="checkbox" name="is_recurring" id="calIsRecurring" class="rounded"> Recurring schedule
             </label>
-            <div id="calRecurrenceControls" class="hidden space-y-2 pl-1 border-l-2 border-blue-200">
+            <div id="calRecurrenceControls" class="hidden space-y-2 pl-1 border-l-2 border-[var(--primary-color)]">
               <div class="grid grid-cols-3 gap-2 items-center text-xs">
                 <span>Every</span>
-                <input name="rec_interval" type="number" min="1" value="1" class="h-8 border rounded px-2">
-                <select name="rec_unit" class="h-8 border rounded px-1">
+                <input name="rec_interval" type="number" min="1" value="1" class="cal-field-input h-8 px-2">
+                <select name="rec_unit" class="cal-field-input h-8 px-1">
                   <option value="day">day(s)</option>
                   <option value="week">week(s)</option>
                   <option value="month">month(s)</option>
@@ -148,24 +178,24 @@
                 <input type="checkbox" name="rec_repeat_forever" class="rounded" checked>
                 Repeat forever
               </label>
-              <div data-rec-end-wrap>
+              <div data-rec-end-wrap class="cal-field">
                 <label class="block text-xs mb-1">Repeat until</label>
-                <input name="rec_end_date" type="date" class="w-full h-8 border rounded px-2">
+                <input name="rec_end_date" type="date" class="cal-field-input w-full h-8 px-2">
               </div>
             </div>
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Time zone</label>
-              <select name="time_zone" id="calTimeZoneSelect" class="w-full h-9 border rounded px-2 text-xs">
+              <select name="time_zone" id="calTimeZoneSelect" class="cal-field-input w-full h-9 px-2 text-xs">
                 <option value="">Household default ({{ household_timezone }})</option>
                 {% for tz in timezone_options %}
                 <option value="{{ tz }}">{{ tz }}</option>
                 {% endfor %}
               </select>
             </div>
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Attendees</label>
-              <textarea name="attendees" id="calAttendeesInput" rows="2" class="w-full border rounded p-2 text-xs" placeholder="email@example.com, other@example.com"></textarea>
-              <p class="text-[10px] text-gray-500 mt-1">Comma-separated emails. Synced to Google when connected.</p>
+              <textarea name="attendees" id="calAttendeesInput" rows="2" class="cal-field-input w-full p-2 text-xs" placeholder="email@example.com, other@example.com"></textarea>
+              <p class="text-[10px] text-[var(--muted-text)] mt-1">Comma-separated emails. Synced to Google when bidirectional sync is enabled.</p>
             </div>
             <div id="calConflictPanel" class="hidden p-2 rounded border border-amber-300 bg-amber-50 dark:bg-amber-950/30 space-y-2">
               <p class="text-xs text-amber-900 dark:text-amber-100 font-semibold">Sync conflict — choose which version to keep:</p>
@@ -174,22 +204,27 @@
                 <button type="button" id="calConflictGoogle" class="px-2 py-1 text-xs rounded border bg-white">Use Google copy</button>
               </div>
             </div>
-            <div>
+            <div class="cal-field">
               <label class="block text-xs font-semibold mb-1">Description</label>
-              <textarea name="description" rows="2" class="w-full border rounded p-2"></textarea>
+              <textarea name="description" rows="2" class="cal-field-input w-full p-2"></textarea>
             </div>
-            <div class="flex gap-2 justify-end">
-              <button type="button" id="calFormCancel" class="px-3 py-1.5 rounded border">Cancel</button>
-              <button type="submit" class="px-3 py-1.5 rounded bg-blue-600 text-white">Save</button>
+            <div class="flex gap-2 justify-end pb-1">
+              <button type="button" id="calFormCancel" class="px-3 py-1.5 rounded border border-[var(--input-border)]">Cancel</button>
+              <button type="submit" class="px-3 py-1.5 rounded bg-[var(--primary-color)] text-white">Save</button>
             </div>
           </form>
-          <div id="calDayList" class="mt-4 space-y-2 max-h-64 overflow-auto border-t pt-3"></div>
         </div>
 
-        <div id="calSideSetup" class="hidden text-sm space-y-4">
-          <div id="calCategorySetup" class="space-y-2 pb-4 border-b border-gray-200 dark:border-slate-700">
-            <p class="text-xs font-semibold tracking-wide uppercase text-gray-600 dark:text-gray-300">Event categories</p>
-            <p class="text-[11px] text-gray-500">Color-code local events. Changes also apply on the dashboard reminders widget.</p>
+        <div id="calSideSetup" class="hidden text-sm space-y-4" role="tabpanel">
+          <div id="calPersonalCalendarSetup" class="space-y-2 pb-4 border-b border-[var(--input-border)]">
+            <p class="text-xs font-semibold tracking-wide uppercase text-[var(--muted-text)]">HomeHub calendars</p>
+            <p class="text-[11px] text-[var(--muted-text)]">Local calendar buckets for your events. Google imports map into these.</p>
+            <div id="calPersonalCalendarManager" class="space-y-2"></div>
+            <p id="calPersonalCalendarHint" class="text-[10px] text-[var(--muted-text)] hidden">Sign in with Firebase to manage personal calendars.</p>
+          </div>
+          <div id="calCategorySetup" class="space-y-2 pb-4 border-b border-[var(--input-border)]">
+            <p class="text-xs font-semibold tracking-wide uppercase text-[var(--muted-text)]">Event categories</p>
+            <p class="text-[11px] text-[var(--muted-text)]">Color-code local events. Changes also apply on the dashboard reminders widget.</p>
             <div id="calCategoryManager" class="space-y-2"></div>
           </div>
           {% if google_calendar_enabled %}
@@ -207,7 +242,8 @@
             <label class="text-xs inline-flex items-center gap-2">
               <span>Sync mode</span>
               <select id="calendarSyncModeSelect" class="h-8 border rounded px-2">
-                <option value="import_only">Import only</option>
+                <option value="import_only">Import only (auto-sync)</option>
+                <option value="manual">Manual import only</option>
                 <option value="bidirectional">Bidirectional</option>
               </select>
             </label>
@@ -233,11 +269,12 @@
           <div id="calendarOwnList" class="space-y-2"></div>
           <div id="calendarVisibleList" class="space-y-1 border-t pt-2"></div>
           {% else %}
-          <p class="text-gray-600 text-xs">Enable <code>google_calendar</code> and Firebase auth in <code>config.yml</code> to sync with Google.</p>
+          <p class="text-[var(--muted-text)] text-xs">Enable <code>google_calendar</code> and Firebase auth in <code>config.yml</code> to sync with Google.</p>
           {% endif %}
         </div>
       </div>
-    </div>
+      </div>
+    </aside>
   </div>
 </div>
 
@@ -317,6 +354,7 @@
 {% endblock %}
 {% block extra_scripts %}
 <script src="/static/js/color_picker.js?v={{ asset_version }}"></script>
+<script src="/static/js/personal_calendars.js?v={{ asset_version }}"></script>
 {% if uses_firebase and config.get('google_calendar', {}).get('enabled') %}
 <script src="/static/js/calendar_sync.js?v={{ asset_version }}"></script>
 {% endif %}

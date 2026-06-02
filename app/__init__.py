@@ -221,6 +221,12 @@ def create_app(test_config: dict | None = None):
     with app.app_context():
         from . import models  # noqa: F401 ensures model metadata is registered
         db.create_all()
+        try:
+            from .google_calendar.imports import ensure_household_calendar
+            ensure_household_calendar()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         # Perform tiny auto-migrations for SQLite to add missing columns if upgrading
         # Skip this block in testing to avoid touching the real DB path
         if not app.config.get('TESTING'):
@@ -368,6 +374,38 @@ def create_app(test_config: dict | None = None):
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_personal_calendar_owner_uid ON personal_calendar(owner_uid)")
                 cur.execute("""
+                CREATE TABLE IF NOT EXISTS personal_calendar_share (
+                    id INTEGER PRIMARY KEY,
+                    personal_calendar_id INTEGER NOT NULL,
+                    grantee_uid TEXT NOT NULL,
+                    can_write INTEGER DEFAULT 0,
+                    UNIQUE(personal_calendar_id, grantee_uid)
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_personal_calendar_share_personal_calendar_id ON personal_calendar_share(personal_calendar_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_personal_calendar_share_grantee_uid ON personal_calendar_share(grantee_uid)")
+                cur.execute(
+                    "SELECT id FROM personal_calendar WHERE owner_uid=? AND visibility='household' AND archived=0 LIMIT 1",
+                    ('__household__',),
+                )
+                household_row = cur.fetchone()
+                if household_row:
+                    household_id = household_row[0]
+                else:
+                    cur.execute(
+                        "INSERT INTO personal_calendar(owner_uid, name, color, visibility, archived, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
+                        ('__household__', 'Household', '#2563eb', 'household', 0, now, now),
+                    )
+                    household_id = cur.lastrowid
+                cur.execute(
+                    "UPDATE reminder SET personal_calendar_id=? WHERE personal_calendar_id IS NULL",
+                    (household_id,),
+                )
+                cur.execute(
+                    "UPDATE recurring_reminder SET personal_calendar_id=? WHERE personal_calendar_id IS NULL",
+                    (household_id,),
+                )
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS calendar_import_profile (
                     id INTEGER PRIMARY KEY,
                     connection_id INTEGER NOT NULL UNIQUE,
@@ -412,24 +450,16 @@ def create_app(test_config: dict | None = None):
                 now = datetime.utcnow().isoformat(sep=' ')
                 cur.execute("SELECT firebase_uid FROM calendar_connection WHERE firebase_uid IS NOT NULL AND TRIM(firebase_uid) != ''")
                 for (owner_uid,) in cur.fetchall():
-                    cur.execute("SELECT id FROM personal_calendar WHERE owner_uid=? ORDER BY id ASC LIMIT 1", (owner_uid,))
+                    cur.execute(
+                        "SELECT id FROM personal_calendar WHERE owner_uid=? AND visibility='private' AND archived=0 ORDER BY id ASC LIMIT 1",
+                        (owner_uid,),
+                    )
                     row = cur.fetchone()
-                    if row:
-                        personal_id = row[0]
-                    else:
+                    if not row:
                         cur.execute(
                             "INSERT INTO personal_calendar(owner_uid, name, color, visibility, archived, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
                             (owner_uid, 'My Calendar', '#2563eb', 'private', 0, now, now),
                         )
-                        personal_id = cur.lastrowid
-                    cur.execute(
-                        "UPDATE reminder SET personal_calendar_id=? WHERE owner_uid=? AND personal_calendar_id IS NULL",
-                        (personal_id, owner_uid),
-                    )
-                    cur.execute(
-                        "UPDATE recurring_reminder SET personal_calendar_id=? WHERE owner_uid=? AND personal_calendar_id IS NULL",
-                        (personal_id, owner_uid),
-                    )
                 # Backfill unit from legacy frequency when null
                 try:
                     cur.execute("UPDATE recurring_reminder SET unit='day' WHERE (unit IS NULL OR unit='') AND frequency='daily'")

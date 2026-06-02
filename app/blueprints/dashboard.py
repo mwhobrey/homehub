@@ -11,7 +11,12 @@ from ..user_context import (
     current_firebase_uid,
 )
 from ..security import sanitize_html, sanitize_text, normalize_hex_color
-from ..google_calendar.imports import ensure_default_personal_calendar, get_connection_sync_mode
+from ..google_calendar.imports import (
+    default_event_personal_calendar_id,
+    ensure_household_calendar,
+    get_connection_sync_mode,
+)
+from ..google_calendar.acl import can_write_personal_calendar, visible_personal_calendar_ids
 from ..reminder_categories import (
     load_reminder_categories,
     save_reminder_categories,
@@ -40,9 +45,8 @@ def _validate_personal_calendar_for_actor(pc_id, fallback_uid: str | None = None
     pc = PersonalCalendar.query.get(pid)
     if not pc:
         return "invalid", None
-    # In Firebase mode, lock personal calendar writes to current user's calendars.
     uid = current_firebase_uid() or fallback_uid
-    if uid and pc.owner_uid != uid:
+    if uid and not can_write_personal_calendar(pc, uid):
         return "forbidden", None
     return None, pc
 
@@ -215,17 +219,27 @@ def _serialize_attendees_list(r: Reminder) -> list:
 
 
 def _calendar_meta(r: Reminder) -> dict:
+    out = {}
     lc_id = getattr(r, 'linked_calendar_id', None)
-    if not lc_id:
-        return {}
-    lc = LinkedCalendar.query.get(lc_id)
-    if not lc:
-        return {'linked_calendar_id': lc_id}
-    return {
-        'linked_calendar_id': lc_id,
-        'calendar_summary': lc.summary,
-        'calendar_color': lc.background_color,
-    }
+    if lc_id:
+        lc = LinkedCalendar.query.get(lc_id)
+        if lc:
+            out.update({
+                'linked_calendar_id': lc_id,
+                'calendar_summary': lc.summary,
+                'calendar_color': lc.background_color,
+            })
+        else:
+            out['linked_calendar_id'] = lc_id
+    pc_id = getattr(r, 'personal_calendar_id', None)
+    if pc_id:
+        pc = PersonalCalendar.query.get(pc_id)
+        if pc:
+            out.update({
+                'personal_calendar_name': pc.name,
+                'personal_calendar_color': pc.color,
+            })
+    return out
 
 
 def _reminders_in_range(q, start: date, end: date):
@@ -234,10 +248,13 @@ def _reminders_in_range(q, start: date, end: date):
     return q.filter(Reminder.date <= end, event_end >= start)
 
 
-def _reminder_visible(r: Reminder, visible_ids: set[int]) -> bool:
+def _reminder_visible(r: Reminder, visible_linked_ids: set[int], visible_pc_ids: set[int]) -> bool:
     if getattr(r, 'source', None) == 'google' or getattr(r, 'linked_calendar_id', None):
         lid = getattr(r, 'linked_calendar_id', None)
-        return lid in visible_ids if lid else False
+        return lid in visible_linked_ids if lid else False
+    pc_id = getattr(r, 'personal_calendar_id', None)
+    if pc_id:
+        return pc_id in visible_pc_ids
     return True
 
 
@@ -292,6 +309,7 @@ def _serialize_recurring_rule(rr: RecurringReminder):
         'google_recurring_event_id': getattr(rr, 'google_recurring_event_id', None),
         'linked_calendar_id': getattr(rr, 'linked_calendar_id', None),
         'exception_dates': _exception_dates(rr),
+        'personal_calendar_id': getattr(rr, 'personal_calendar_id', None),
     }
 
 
@@ -325,7 +343,9 @@ def api_reminder_category_slug():
 @main_bp.route('/api/reminders')
 def api_reminders_list():
     from ..google_calendar.acl import visible_linked_calendar_ids
-    visible_ids = set(visible_linked_calendar_ids())
+
+    visible_linked_ids = set(visible_linked_calendar_ids())
+    visible_pc_ids = visible_personal_calendar_ids()
     scope = (request.args.get('scope', 'day') or 'day').lower()
     base_date = _parse_date_param(request.args.get('date'), date.today())
     q = Reminder.query
@@ -352,7 +372,7 @@ def api_reminders_list():
         ).all()
     except Exception:
         rows = q.order_by(Reminder.date.asc(), Reminder.id.asc()).all()
-    rows = [r for r in rows if _reminder_visible(r, visible_ids)]
+    rows = [r for r in rows if _reminder_visible(r, visible_linked_ids, visible_pc_ids)]
     # Generate from recurring rules within scope window (without altering past)
     try:
         rules = RecurringReminder.query.all()
@@ -409,6 +429,9 @@ def api_reminders_list():
         return d + timedelta(days=interval)
     for rr in rules:
         if getattr(rr, 'google_recurring_event_id', None):
+            continue
+        rr_pc = getattr(rr, 'personal_calendar_id', None)
+        if rr_pc and rr_pc not in visible_pc_ids:
             continue
         exc_set = set(_exception_dates(rr))
         rs = rr.start_date or window_start
@@ -472,6 +495,7 @@ def api_reminders_list():
             'color': rr.color,
             'end_date': rr.end_date.strftime('%Y-%m-%d') if rr.end_date else None,
             'dates': [d.strftime('%Y-%m-%d') for d in rule_dates.get(rr.id, [])],
+            'personal_calendar_id': getattr(rr, 'personal_calendar_id', None),
         })
     return jsonify({
         'ok': True,
@@ -590,6 +614,8 @@ def api_recurring_occurrence(rid):
     _add_exception_date(rr, occ_date)
     db.session.commit()
     new_date = _parse_date_param(patch.get('date'), occ_date)
+    if new_date and new_date != occ_date:
+        _add_exception_date(rr, new_date)
     r = Reminder(
         date=new_date,
         title=sanitize_text(patch.get('title') or rr.title),
@@ -599,6 +625,7 @@ def api_recurring_occurrence(rid):
         category=rr.category,
         color=rr.color,
         all_day=not bool(patch.get('time') or rr.time),
+        recurring_id=rr.id,
     )
     if patch.get('end_date'):
         r.end_date = _parse_date_param(patch.get('end_date'), None)
@@ -632,9 +659,18 @@ def _parse_time_field(time_raw):
 def _apply_schedule_fields(reminder: Reminder, payload: dict) -> None:
     if 'all_day' in payload:
         reminder.all_day = bool(payload.get('all_day'))
+    old_date = reminder.date
     if 'date' in payload:
         nd = _parse_date_param(payload.get('date'), None)
-        if nd:
+        if nd and old_date and nd != old_date:
+            end_d = getattr(reminder, 'end_date', None)
+            if end_d:
+                if end_d >= old_date:
+                    reminder.end_date = end_d + timedelta(days=(nd - old_date).days)
+                elif end_d < nd:
+                    reminder.end_date = nd
+            reminder.date = nd
+        elif nd:
             reminder.date = nd
     if 'end_date' in payload:
         reminder.end_date = _parse_date_param(payload.get('end_date'), None)
@@ -724,7 +760,7 @@ def api_reminders_create():
                 return jsonify({'ok': False, 'error': 'Not allowed'}), 403
             rr.personal_calendar_id = pc.id
         elif conn:
-            rr.personal_calendar_id = ensure_default_personal_calendar(conn.firebase_uid).id
+            rr.personal_calendar_id = default_event_personal_calendar_id()
         db.session.add(rr)
         db.session.commit()
         if lc:
@@ -780,8 +816,7 @@ def api_reminders_create():
             return jsonify({'ok': False, 'error': 'Not allowed'}), 403
         r.personal_calendar_id = pc.id
     elif conn:
-        default_pc = ensure_default_personal_calendar(conn.firebase_uid)
-        r.personal_calendar_id = default_pc.id
+        r.personal_calendar_id = default_event_personal_calendar_id()
     db.session.add(r)
     db.session.commit()
     if lc and sync_mode == 'bidirectional':

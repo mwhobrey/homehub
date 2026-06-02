@@ -9,7 +9,10 @@ from ..models import (
     CalendarDisplayPref,
     CalendarShare,
     LinkedCalendar,
+    PersonalCalendar,
+    PersonalCalendarShare,
     Reminder,
+    db,
 )
 from ..user_context import current_email, is_admin, uses_firebase
 
@@ -152,3 +155,103 @@ def resolve_writable_calendar(
             return lc
     lc = LinkedCalendar.query.filter_by(connection_id=conn.id).first()
     return lc
+
+
+HOUSEHOLD_VISIBILITY = "household"
+PRIVATE_VISIBILITY = "private"
+
+
+def is_household_personal_calendar(pc: PersonalCalendar | None) -> bool:
+    if not pc:
+        return False
+    return (pc.visibility or PRIVATE_VISIBILITY).lower() == HOUSEHOLD_VISIBILITY
+
+
+def can_view_personal_calendar(pc: PersonalCalendar, viewer_uid: str | None = None) -> bool:
+    viewer_uid = viewer_uid or _viewer_uid()
+    if not pc or pc.archived:
+        return False
+    if not uses_firebase():
+        return True
+    if not viewer_uid:
+        return False
+    if has_request_context() and is_admin():
+        return True
+    if is_household_personal_calendar(pc):
+        return True
+    if pc.owner_uid == viewer_uid:
+        return True
+    return PersonalCalendarShare.query.filter_by(
+        personal_calendar_id=pc.id,
+        grantee_uid=viewer_uid,
+    ).first() is not None
+
+
+def can_write_personal_calendar(pc: PersonalCalendar, viewer_uid: str | None = None) -> bool:
+    viewer_uid = viewer_uid or _viewer_uid()
+    if not can_view_personal_calendar(pc, viewer_uid):
+        return False
+    if not uses_firebase():
+        return True
+    if has_request_context() and is_admin():
+        return True
+    if is_household_personal_calendar(pc):
+        return True
+    if pc.owner_uid == viewer_uid:
+        return True
+    share = PersonalCalendarShare.query.filter_by(
+        personal_calendar_id=pc.id,
+        grantee_uid=viewer_uid,
+        can_write=True,
+    ).first()
+    return share is not None
+
+
+def visible_personal_calendar_ids(viewer_uid: str | None = None) -> set[int]:
+    viewer_uid = viewer_uid or _viewer_uid()
+    if not uses_firebase():
+        return {pc.id for pc in PersonalCalendar.query.filter_by(archived=False).all()}
+    if not viewer_uid:
+        return set()
+    ids = set()
+    for pc in PersonalCalendar.query.filter_by(archived=False).all():
+        if can_view_personal_calendar(pc, viewer_uid):
+            ids.add(pc.id)
+    return ids
+
+
+def household_member_roster(viewer_uid: str | None = None) -> list[dict]:
+    """Firebase household members known to HomeHub (for share pickers)."""
+    from ..google_calendar.imports import HOUSEHOLD_OWNER_UID
+
+    viewer_uid = viewer_uid or _viewer_uid()
+    by_uid: dict[str, str] = {}
+
+    for conn in CalendarConnection.query.order_by(CalendarConnection.firebase_email.asc()).all():
+        uid = (conn.firebase_uid or '').strip()
+        if uid:
+            by_uid[uid] = conn.firebase_email or ''
+
+    for pc in PersonalCalendar.query.filter_by(archived=False).all():
+        uid = (pc.owner_uid or '').strip()
+        if uid and uid != HOUSEHOLD_OWNER_UID:
+            by_uid.setdefault(uid, '')
+
+    for share in PersonalCalendarShare.query.all():
+        uid = (share.grantee_uid or '').strip()
+        if uid:
+            by_uid.setdefault(uid, '')
+
+    for (uid,) in db.session.query(Reminder.owner_uid).filter(
+        Reminder.owner_uid.isnot(None),
+        Reminder.owner_uid != '',
+    ).distinct():
+        uid = (uid or '').strip()
+        if uid:
+            by_uid.setdefault(uid, '')
+
+    out = []
+    for uid, email in sorted(by_uid.items(), key=lambda item: (item[1] or item[0]).lower()):
+        label = email or uid
+        out.append({'uid': uid, 'email': label})
+    return out

@@ -71,6 +71,34 @@ def normalize_category_list(categories: list) -> list[dict]:
     return out
 
 
+def merge_import_categories(category_mappings: list[dict]) -> list[dict]:
+    """Ensure mapped Google categories exist as local HomeHub reminder categories."""
+    existing = {c['key']: dict(c) for c in load_reminder_categories(seed_if_empty=True)}
+    changed = False
+    for row in category_mappings:
+        if not isinstance(row, dict):
+            continue
+        label = sanitize_text(row.get('target_label') or row.get('source_label') or '').strip()
+        if not label:
+            continue
+        key = (row.get('target_key') or '').strip().lower()
+        if not key or not KEY_RE.match(key):
+            key = slugify_category_key(label)
+        color = normalize_hex_color(row.get('target_color')) or DEFAULT_COLOR
+        prev = existing.get(key)
+        if not prev:
+            existing[key] = {'key': key, 'label': label, 'color': color}
+            changed = True
+            continue
+        if prev.get('label') != label or prev.get('color') != color:
+            existing[key] = {'key': key, 'label': label, 'color': color}
+            changed = True
+    merged = sorted(existing.values(), key=lambda c: (c.get('label') or c.get('key') or '').lower())
+    if changed:
+        save_reminder_categories(merged)
+    return merged
+
+
 def _load_stored_categories() -> list[dict] | None:
     try:
         _ensure_app_setting_table()
