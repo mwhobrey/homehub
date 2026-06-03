@@ -26,6 +26,7 @@ feature_toggles:
   who_is_home: true
   personal_status: true
   chores: true
+  todo_list: true
   recipes: true
   expiry_tracker: true
   url_shortener: true

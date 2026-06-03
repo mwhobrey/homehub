@@ -7,6 +7,7 @@
 ### Core product
 
 - All feature modules listed in README are implemented as Flask routes + templates (notes, upload, shopping, chores, recipes, expiry, expenses, media, PDFs, shortener, QR, dashboard).
+- **To-do lists** (`/todo-lists`): separate nav from chores; multiple lists with household/private visibility, Firebase share ACL, list/item due dates, list/item recurrence, tags, assignees; optional **personal calendar** per list syncs open due dates to HomeHub calendar reminders (`feature_toggles.todo_list`).
 - **School module** (`/school`): classes, enrollments, assignments with deadlines, student submissions (file upload + external links), teacher grading/feedback, weighted gradebook, attendance, analytics; config under `school:` and toggle `feature_toggles.school`.
 - **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker, wide modal Google import wizard (multi-column source/category grids, per-calendar mapping, default category names/colors from Google, import from any mapping step).
 - **Feature toggles** in `config.yml` hide sidebar entries without removing routes entirely (routes still exist if URL known).

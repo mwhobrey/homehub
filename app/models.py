@@ -74,6 +74,83 @@ class RecurringChore(db.Model):
     last_generated_date = db.Column(db.Date)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+class TodoList(db.Model):
+    __tablename__ = 'todo_list'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_uid = db.Column(db.String(128), nullable=False, index=True)
+    creator = db.Column(db.String(64))
+    name = db.Column(db.String(256), nullable=False)
+    description = db.Column(db.Text, default='')
+    visibility = db.Column(db.String(16), default='private')  # private | household
+    tags = db.Column(db.Text, default='[]')
+    assignees = db.Column(db.Text, default='[]')
+    due_date = db.Column(db.Date)
+    personal_calendar_id = db.Column(db.Integer, db.ForeignKey('personal_calendar.id'))
+    list_reminder_id = db.Column(db.Integer, db.ForeignKey('reminder.id'))
+    archived = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TodoListShare(db.Model):
+    __tablename__ = 'todo_list_share'
+    id = db.Column(db.Integer, primary_key=True)
+    todo_list_id = db.Column(db.Integer, db.ForeignKey('todo_list.id'), nullable=False, index=True)
+    grantee_uid = db.Column(db.String(128), nullable=False, index=True)
+    can_write = db.Column(db.Boolean, default=False)
+    todo_list = db.relationship('TodoList', backref=db.backref('shares', lazy=True))
+    __table_args__ = (
+        db.UniqueConstraint('todo_list_id', 'grantee_uid', name='uq_todo_list_share'),
+    )
+
+
+class RecurringTodoList(db.Model):
+    __tablename__ = 'recurring_todo_list'
+    id = db.Column(db.Integer, primary_key=True)
+    todo_list_id = db.Column(db.Integer, db.ForeignKey('todo_list.id'), nullable=False, unique=True)
+    interval = db.Column(db.Integer, default=1)
+    unit = db.Column(db.String(8), default='week')
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    last_generated_date = db.Column(db.Date)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    todo_list = db.relationship('TodoList', backref=db.backref('recurrence', uselist=False))
+
+
+class TodoItem(db.Model):
+    __tablename__ = 'todo_item'
+    id = db.Column(db.Integer, primary_key=True)
+    todo_list_id = db.Column(db.Integer, db.ForeignKey('todo_list.id'), nullable=False, index=True)
+    description = db.Column(db.Text, nullable=False)
+    creator = db.Column(db.String(64))
+    done = db.Column(db.Boolean, default=False)
+    due_date = db.Column(db.Date)
+    tags = db.Column(db.Text, default='[]')
+    assignees = db.Column(db.Text, default='[]')
+    recurring_id = db.Column(db.Integer)
+    reminder_id = db.Column(db.Integer, db.ForeignKey('reminder.id'))
+    sort_order = db.Column(db.Integer, default=0)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    todo_list = db.relationship('TodoList', backref=db.backref('items', lazy=True))
+
+
+class RecurringTodoItem(db.Model):
+    __tablename__ = 'recurring_todo_item'
+    id = db.Column(db.Integer, primary_key=True)
+    todo_list_id = db.Column(db.Integer, db.ForeignKey('todo_list.id'), nullable=False, index=True)
+    description = db.Column(db.Text, nullable=False)
+    creator = db.Column(db.String(64))
+    tags = db.Column(db.Text, default='[]')
+    assignees = db.Column(db.Text, default='[]')
+    interval = db.Column(db.Integer, default=1)
+    unit = db.Column(db.String(8), default='day')
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    last_generated_date = db.Column(db.Date)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(256), nullable=False)

@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="todo-page" id="todoApp"
+     data-uses-firebase="{{ 'true' if uses_firebase else 'false' }}"
+     data-family="{{ family_members | tojson }}"
+     data-current-user="{{ current_user_name | tojson }}"
+     data-today="{{ today_date.strftime('%Y-%m-%d') if today_date is defined else '' }}">
+    <header class="todo-page-header">
+        <div>
+            <h1><i class="fa-solid fa-list-check" style="color:var(--primary-color)" aria-hidden="true"></i> To-Do Lists</h1>
+            <p>Multiple lists with sharing, schedules, recurrence, tags, and assignees.</p>
+        </div>
+    </header>
+    <div class="todo-workspace">
+        <aside class="card todo-panel">
+            <div class="todo-panel__head todo-panel__head--toolbar">
+                <span class="todo-panel__head-title">Your lists</span>
+                <button type="button" id="btnNewList" class="btn btn-primary todo-panel__new-btn inline-flex items-center gap-1.5" title="Create a new list">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i><span>New list</span>
+                </button>
+            </div>
+            <div class="todo-panel__body">
+                <div class="todo-search">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input type="search" id="listSearch" placeholder="Search lists…" autocomplete="off">
+                </div>
+                <label class="inline-flex items-center gap-2 text-xs cursor-pointer" style="color:var(--muted-text)">
+                    <input type="checkbox" id="showDoneLists" class="rounded">
+                    Show done
+                </label>
+                <div class="todo-panel__scroll">
+                    <div id="listSidebar" class="space-y-2"></div>
+                    <p id="listSidebarEmpty" class="hidden todo-field-hint text-center py-8">No lists yet. Use <strong>New list</strong> in the header.</p>
+                </div>
+            </div>
+        </aside>
+        <section class="card todo-panel todo-panel--main" id="todoMainPanel">
+            <div id="emptyState" class="todo-empty">
+                <div class="todo-empty__inner">
+                    <i class="fa-solid fa-list-check todo-empty__icon" aria-hidden="true"></i>
+                    <div>
+                        <p class="todo-empty__title">Select a list</p>
+                        <p class="todo-empty__hint">Choose a list on the left, or tap <strong>New list</strong> there.</p>
+                    </div>
+                </div>
+            </div>
+            <div id="listDetail" class="hidden todo-detail">
+                <header class="todo-detail-head">
+                    <div class="todo-title-row">
+                        <h2 id="detailListName"></h2>
+                        <span id="detailVisibilityBadge" class="todo-vis-badge shrink-0"></span>
+                        <div class="todo-list-actions">
+                            <button type="button" id="btnEditList" class="todo-icon-btn" title="Edit list" aria-label="Edit list"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+                            <button type="button" id="btnDeleteList" class="todo-icon-btn todo-icon-btn--danger" title="Delete list" aria-label="Delete list"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+                        </div>
+                    </div>
+                    <p class="text-sm mt-2 mb-0" id="detailDescription"></p>
+                    <p class="text-xs mt-1 mb-0" id="detailMeta"></p>
+                    <div class="mt-3">
+                        <div class="flex justify-between text-xs mb-1" style="color:var(--muted-text)">
+                            <span id="detailProgressLabel">Progress</span>
+                            <span id="detailProgressPct"></span>
+                        </div>
+                        <div class="todo-progress-track"><div id="detailProgressBar" class="todo-progress-fill" style="width:0%"></div></div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-3" id="detailTags"></div>
+                    <div class="flex flex-wrap gap-2" id="detailAssignees"></div>
+                </header>
+                <div class="todo-add-panel">
+                    <form id="itemForm" class="space-y-3">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                            <div class="md:col-span-6 todo-field">
+                                <label for="itemDescription">New item</label>
+                                <input type="text" id="itemDescription" placeholder="What needs doing?" required autocomplete="off">
+                            </div>
+                            <div class="md:col-span-3 todo-field">
+                                <label for="itemDueDate">Due date</label>
+                                <input type="date" id="itemDueDate">
+                            </div>
+                            <div class="md:col-span-3">
+                                <button type="submit" class="btn btn-primary w-full h-11">Add item</button>
+                            </div>
+                        </div>
+                        <button type="button" id="toggleItemAdvanced" class="text-sm font-medium" style="color:var(--primary-color)">
+                            <i class="fa-solid fa-chevron-down mr-1" id="itemAdvancedIcon" aria-hidden="true"></i>More options
+                        </button>
+                        <div id="itemAdvancedPanel" class="hidden space-y-3 pt-3 border-t" style="border-color:var(--input-border)">
+                            <div class="todo-field">
+                                <label>Tags</label>
+                                <div class="todo-tag-wrap" id="itemTagWrap">
+                                    <input type="text" id="itemTagInput" placeholder="Type tag, press Enter">
+                                </div>
+                                <input type="hidden" id="itemTagsField" value="[]">
+                                <div class="mt-2 flex flex-wrap gap-2 text-xs" id="itemTagLibrary"></div>
+                            </div>
+                            <div class="todo-field">
+                                <label>Assignees</label>
+                                <div id="itemAssigneePicker" class="todo-chip-picker"></div>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="itemRecurring" name="is_recurring" class="rounded">
+                                    <span>Recurring item</span>
+                                </label>
+                            </div>
+                            <div class="hidden" id="itemRecurrencePanel">
+                                <div class="todo-dialog__grid-2">
+                                    <div class="todo-field">
+                                        <label for="itemRecInterval">Every</label>
+                                        <input type="number" min="1" name="rec_interval" id="itemRecInterval" value="1">
+                                    </div>
+                                    <div class="todo-field">
+                                        <label for="itemRecUnit">Unit</label>
+                                        <select name="rec_unit" id="itemRecUnit">
+                                            <option value="day">day</option>
+                                            <option value="week">week</option>
+                                            <option value="month">month</option>
+                                            <option value="year">year</option>
+                                        </select>
+                                    </div>
+                                    <div class="todo-field">
+                                        <label for="itemRecStart">From</label>
+                                        <input type="date" name="rec_start_date" id="itemRecStart">
+                                    </div>
+                                    <div class="todo-field" data-rec-end-wrap>
+                                        <label for="itemRecEnd">Until</label>
+                                        <input type="date" name="rec_end_date" id="itemRecEnd">
+                                    </div>
+                                </div>
+                                <label class="inline-flex items-center gap-2 text-sm mt-2">
+                                    <input type="checkbox" name="rec_repeat_forever" class="rounded" id="itemRecRepeatForever" checked>
+                                    Repeat forever
+                                </label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="todo-items-toolbar flex flex-wrap gap-2 items-center text-sm" id="itemFilterRow">
+                    <span style="color:var(--muted-text)">Filter:</span>
+                    <div id="itemTagFilters" class="flex flex-wrap gap-2"></div>
+                    <button type="button" id="clearItemTagFilters" class="btn btn-secondary text-xs hidden">Clear</button>
+                    <label class="ml-auto inline-flex items-center gap-2 text-xs" style="color:var(--muted-text)">
+                        <input type="checkbox" id="hideCompletedItems" class="rounded">
+                        Hide completed
+                    </label>
+                </div>
+                <div class="todo-items-scroll">
+                    <ul id="itemsList" class="space-y-2"></ul>
+                    <p id="itemsEmpty" class="hidden todo-field-hint text-center py-8">No items yet — add one above.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+<dialog id="listDialog" class="homehub-dialog">
+    <form id="listForm" method="dialog">
+        <header class="todo-dialog__head">
+            <h3 id="listDialogTitle">New list</h3>
+        </header>
+        <input type="hidden" id="editListId">
+        <div class="todo-dialog__body">
+            <section class="todo-dialog__section">
+                <p class="todo-dialog__section-title">Basics</p>
+                <div class="todo-field">
+                    <label for="listName">Name</label>
+                    <input type="text" id="listName" required>
+                </div>
+                <div class="todo-field">
+                    <label for="listDescription">Description</label>
+                    <textarea id="listDescription" rows="2"></textarea>
+                </div>
+            </section>
+            <section class="todo-dialog__section">
+                <p class="todo-dialog__section-title">Who can see it</p>
+                <input type="hidden" id="listVisibility" value="private">
+                <div class="todo-segmented" role="group" aria-label="List visibility">
+                    <button type="button" data-vis="private" class="is-on">Private</button>
+                    <button type="button" data-vis="household">Household</button>
+                </div>
+                <p class="todo-field-hint" id="visibilityHint">Only you unless you share with specific people.</p>
+                <div id="sharePanel" class="hidden todo-share-panel">
+                    <p class="text-sm font-semibold m-0 mb-2">Share with</p>
+                    <div id="shareMembers" class="space-y-2 text-sm"></div>
+                    <p id="shareMembersEmpty" class="hidden todo-field-hint m-0 mt-2">No other household members to share with yet.</p>
+                </div>
+            </section>
+            <section class="todo-dialog__section">
+                <p class="todo-dialog__section-title">Calendar</p>
+                <div class="todo-field">
+                    <label for="listPersonalCalendar">Show due dates on</label>
+                    <select id="listPersonalCalendar">
+                        <option value="">None — to-dos stay off the calendar</option>
+                    </select>
+                    <p class="todo-field-hint">Open items with a due date sync as all-day reminders on this calendar.</p>
+                </div>
+            </section>
+            <section class="todo-dialog__section">
+                <p class="todo-dialog__section-title">Schedule</p>
+                <div class="todo-field">
+                    <label for="listDueDate">List due date (optional)</label>
+                    <input type="date" id="listDueDate">
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" id="listRecurring" name="is_recurring" class="rounded">
+                    <span>Recurring list schedule</span>
+                </label>
+                <div id="listRecurrencePanel" class="hidden todo-dialog__grid-2">
+                    <div class="todo-field">
+                        <label for="listRecInterval">Every</label>
+                        <input type="number" min="1" name="rec_interval" id="listRecInterval" value="1">
+                    </div>
+                    <div class="todo-field">
+                        <label for="listRecUnit">Unit</label>
+                        <select name="rec_unit" id="listRecUnit">
+                            <option value="day">day</option>
+                            <option value="week" selected>week</option>
+                            <option value="month">month</option>
+                            <option value="year">year</option>
+                        </select>
+                    </div>
+                    <div class="todo-field">
+                        <label for="listRecStart">From</label>
+                        <input type="date" name="rec_start_date" id="listRecStart">
+                    </div>
+                    <div class="todo-field" data-rec-end-wrap>
+                        <label for="listRecEnd">Until</label>
+                        <input type="date" name="rec_end_date" id="listRecEnd">
+                    </div>
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="rec_repeat_forever" class="rounded" id="listRecRepeatForever" checked>
+                    Repeat forever
+                </label>
+            </section>
+            <section class="todo-dialog__section">
+                <p class="todo-dialog__section-title">Organization</p>
+                <div class="todo-field">
+                    <label>Tags</label>
+                    <div class="todo-tag-wrap" id="listTagWrap">
+                        <input type="text" id="listTagInput" placeholder="Type tag, press Enter">
+                    </div>
+                    <input type="hidden" id="listTagsField" value="[]">
+                    <div class="mt-2 flex flex-wrap gap-2 text-xs" id="listTagLibrary"></div>
+                </div>
+                <div class="todo-field">
+                    <label>List assignees</label>
+                    <div id="listAssigneePicker" class="todo-chip-picker"></div>
+                </div>
+            </section>
+        </div>
+        <footer class="todo-dialog__foot">
+            <button type="button" id="listDialogCancel" class="btn btn-secondary h-11">Cancel</button>
+            <button type="submit" class="btn btn-primary h-11">Save list</button>
+        </footer>
+    </form>
+</dialog>
+<dialog id="itemDialog" class="homehub-dialog">
+    <form id="itemEditForm" method="dialog">
+        <header class="todo-dialog__head">
+            <h3>Edit item</h3>
+        </header>
+        <input type="hidden" id="editItemId">
+        <div class="todo-dialog__body">
+            <div class="todo-field">
+                <label for="editItemDescription">Description</label>
+                <input type="text" id="editItemDescription" required>
+            </div>
+            <div class="todo-field">
+                <label for="editItemDueDate">Due date</label>
+                <input type="date" id="editItemDueDate">
+            </div>
+            <div class="todo-field">
+                <label>Tags</label>
+                <div class="todo-tag-wrap" id="editItemTagWrap">
+                    <input type="text" id="editItemTagInput" placeholder="Type tag, press Enter">
+                </div>
+                <input type="hidden" id="editItemTagsField" value="[]">
+                <div class="mt-2 flex flex-wrap gap-2 text-xs" id="editItemTagLibrary"></div>
+            </div>
+            <div class="todo-field">
+                <label>Assignees</label>
+                <div id="editItemAssigneePicker" class="todo-chip-picker"></div>
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm">
+                <input type="checkbox" id="editItemRecurring" name="is_recurring" class="rounded">
+                <span>Recurring item</span>
+            </label>
+            <div class="hidden" id="editItemRecurrencePanel">
+                <div class="todo-dialog__grid-2">
+                    <div class="todo-field">
+                        <label for="editItemRecInterval">Every</label>
+                        <input type="number" min="1" name="rec_interval" id="editItemRecInterval" value="1">
+                    </div>
+                    <div class="todo-field">
+                        <label for="editItemRecUnit">Unit</label>
+                        <select name="rec_unit" id="editItemRecUnit">
+                            <option value="day">day</option>
+                            <option value="week">week</option>
+                            <option value="month">month</option>
+                            <option value="year">year</option>
+                        </select>
+                    </div>
+                    <div class="todo-field">
+                        <label for="editItemRecStart">From</label>
+                        <input type="date" name="rec_start_date" id="editItemRecStart">
+                    </div>
+                    <div class="todo-field" data-rec-end-wrap>
+                        <label for="editItemRecEnd">Until</label>
+                        <input type="date" name="rec_end_date" id="editItemRecEnd">
+                    </div>
+                </div>
+                <label class="inline-flex items-center gap-2 text-sm mt-2">
+                    <input type="checkbox" name="rec_repeat_forever" class="rounded" id="editItemRecRepeatForever" checked>
+                    Repeat forever
+                </label>
+            </div>
+        </div>
+        <footer class="todo-dialog__foot">
+            <button type="button" id="itemDialogCancel" class="btn btn-secondary h-11">Cancel</button>
+            <button type="submit" class="btn btn-primary h-11">Save</button>
+        </footer>
+    </form>
+</dialog>
+<script src="/static/js/tags.js?v={{ asset_version }}"></script>
+<script src="/static/js/form_tags.js?v={{ asset_version }}"></script>
+<script src="/static/js/todos.js?v={{ asset_version }}"></script>
+{% endblock %}

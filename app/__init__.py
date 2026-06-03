@@ -447,6 +447,84 @@ def create_app(test_config: dict | None = None):
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_category_import_mapping_connection_id ON category_import_mapping(connection_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_category_import_mapping_linked_calendar_id ON category_import_mapping(linked_calendar_id)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS todo_list (
+                    id INTEGER PRIMARY KEY,
+                    owner_uid TEXT NOT NULL,
+                    creator TEXT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    visibility TEXT DEFAULT 'private',
+                    tags TEXT DEFAULT '[]',
+                    assignees TEXT DEFAULT '[]',
+                    due_date DATE,
+                    personal_calendar_id INTEGER,
+                    list_reminder_id INTEGER,
+                    archived INTEGER DEFAULT 0,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_todo_list_owner_uid ON todo_list(owner_uid)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS todo_list_share (
+                    id INTEGER PRIMARY KEY,
+                    todo_list_id INTEGER NOT NULL,
+                    grantee_uid TEXT NOT NULL,
+                    can_write INTEGER DEFAULT 0,
+                    UNIQUE(todo_list_id, grantee_uid)
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_todo_list_share_todo_list_id ON todo_list_share(todo_list_id)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS recurring_todo_list (
+                    id INTEGER PRIMARY KEY,
+                    todo_list_id INTEGER NOT NULL UNIQUE,
+                    interval INTEGER DEFAULT 1,
+                    unit TEXT DEFAULT 'week',
+                    start_date DATE,
+                    end_date DATE,
+                    last_generated_date DATE,
+                    timestamp TIMESTAMP
+                )
+                """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS todo_item (
+                    id INTEGER PRIMARY KEY,
+                    todo_list_id INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    creator TEXT,
+                    done INTEGER DEFAULT 0,
+                    due_date DATE,
+                    tags TEXT DEFAULT '[]',
+                    assignees TEXT DEFAULT '[]',
+                    recurring_id INTEGER,
+                    reminder_id INTEGER,
+                    sort_order INTEGER DEFAULT 0,
+                    timestamp TIMESTAMP
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_todo_item_todo_list_id ON todo_item(todo_list_id)")
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS recurring_todo_item (
+                    id INTEGER PRIMARY KEY,
+                    todo_list_id INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    creator TEXT,
+                    tags TEXT DEFAULT '[]',
+                    assignees TEXT DEFAULT '[]',
+                    interval INTEGER DEFAULT 1,
+                    unit TEXT DEFAULT 'day',
+                    start_date DATE,
+                    end_date DATE,
+                    last_generated_date DATE,
+                    timestamp TIMESTAMP
+                )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_recurring_todo_item_todo_list_id ON recurring_todo_item(todo_list_id)")
+                ensure_column('todo_list', 'personal_calendar_id', 'INTEGER', None)
+                ensure_column('todo_list', 'list_reminder_id', 'INTEGER', None)
+                ensure_column('todo_item', 'reminder_id', 'INTEGER', None)
                 now = datetime.utcnow().isoformat(sep=' ')
                 cur.execute("SELECT firebase_uid FROM calendar_connection WHERE firebase_uid IS NOT NULL AND TRIM(firebase_uid) != ''")
                 for (owner_uid,) in cur.fetchall():
@@ -509,6 +587,7 @@ def create_app(test_config: dict | None = None):
     from .blueprints import calendar_sync  # noqa: F401
     from .blueprints import calendar_page  # noqa: F401
     from .blueprints import school  # noqa: F401
+    from .blueprints import todos  # noqa: F401
     app.register_blueprint(main_bp)
 
     if _should_run_background_jobs(app):

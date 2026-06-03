@@ -21,6 +21,7 @@ def apply_config_defaults(config: dict) -> dict:
     config['feature_toggles'].setdefault('show_chores_on_homepage', False)
     config['feature_toggles'].setdefault('calendar', True)
     config['feature_toggles'].setdefault('school', True)
+    config['feature_toggles'].setdefault('todo_list', True)
     school = config.setdefault('school', {})
     school.setdefault('teachers', [])
     school.setdefault('students', [])

@@ -58,6 +58,8 @@ All routes attach to **`main_bp`** (`blueprints/__init__.py`) — endpoint names
 | `uploads.py` | `/upload`, `/uploads/*` | Shared cloud |
 | `shopping.py` | `/shopping`, `/api/shopping*` | Shopping list + tags API |
 | `chores.py` | `/chores`, `/api/chores*` | Chores + recurring |
+| `todos.py` | `/todo-lists`, `/api/todo-lists*`, `/api/todo-items*` | Multi-list to-dos (share, schedule, recurrence, calendar sync) |
+| `todo_calendar_sync.py` | (imported by `todos.py`) | Due dates → `Reminder` rows on selected `PersonalCalendar` |
 | `school.py` | `/school`, `/api/school/*` | Homeschool: classes, assignments, submissions, gradebook, attendance |
 | `recipes.py` | `/recipes`, `/api/recipes*` | Recipe book |
 | `expiry.py` | `/expiry` | Expiry tracker |
@@ -77,7 +79,7 @@ Side-effect imports: `app/__init__.py` imports each blueprint module so decorato
 | `index.html` | Dashboard: notice, compact reminders widget, who's home, weather slot |
 | `calendar.html` | Full calendar: views, event editor, Google setup tab |
 | `login.html` | Legacy password or Firebase |
-| `notes.html`, `shopping.html`, `chores.html`, … | One per feature area |
+| `notes.html`, `shopping.html`, `chores.html`, `todos.html`, … | One per feature area |
 
 Shared partial: `_flash.html`.
 
@@ -94,6 +96,7 @@ Shared partial: `_flash.html`.
 | `js/weather.js` | Open-Meteo client |
 | `js/firebase-auth.js` | Google sign-in flow |
 | `js/tags.js`, `form_tags.js` | Tag UI for shopping/chores/recipes |
+| `js/todos.js` | To-do lists SPA (lists, items, shares) |
 | `js/school_api.js`, `school_dashboard.js`, `school_assignment.js` | School API client + page logic |
 | `js/school_api.js`, `school_dashboard.js`, `school_assignment.js` | School API client + page logic |
 | `icons/` | PWA icons, SVG logo |
@@ -103,6 +106,7 @@ Shared partial: `_flash.html`.
 See `app/models.py` for full schema. Key entities:
 
 - **Collaboration:** `Note`, `ShoppingItem`, `Chore`, `Recipe`, `ExpiryItem`
+- **To-do lists:** `TodoList`, `TodoListShare`, `TodoItem`, `RecurringTodoList`, `RecurringTodoItem` (ACL in `app/todo_acl.py`)
 - **Files:** `File`, `Media`, `PDF`
 - **Household:** `HomeStatus`, `MemberStatus`, `Notice`
 - **Scheduling:** `Reminder`, `RecurringReminder`, `RecurringChore`, `PersonalCalendar`, `PersonalCalendarShare`, `CalendarImportProfile`, `CalendarImportMapping`, `CategoryImportMapping`
