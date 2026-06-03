@@ -33,6 +33,7 @@ Keep context small: **do not load all runbook files** unless the task crosses co
 
 ## Quick facts
 
+- **Contributor docs:** [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`CHANGELOG.md`](../CHANGELOG.md), [`README.md`](../README.md) (fork overview)
 - **Entry:** `wsgi.py` / `run.py` → `app.create_app()`
 - **Config:** `config.yml` (from `config-example.yml`); loaded by `app/config.py`
 - **DB:** SQLite at `data/app.db` (auto `create_all` + inline SQLite migrations in `app/__init__.py`)

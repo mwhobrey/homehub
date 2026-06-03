@@ -1,139 +1,68 @@
-[![CI/CD](https://github.com/surajverma/homehub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/surajverma/homehub/actions/workflows/docker-publish.yml)
-![Latest Release](https://img.shields.io/github/v/release/surajverma/homehub?include_prereleases)
-[![GitHub last commit](https://img.shields.io/github/last-commit/surajverma/homehub)](https://github.com/surajverma/homehub/commits/main)
-[![GitHub issues](https://img.shields.io/github/issues/surajverma/homehub)](https://github.com/surajverma/homehub/issues)
-[![GitHub closed issues](https://img.shields.io/github/issues-closed/surajverma/homehub?color=brightgreen)](https://github.com/surajverma/homehub/issues?q=is%3Aissue+is%3Aclosed)
-[![GitHub issues by-label](https://img.shields.io/github/issues/surajverma/homehub/feature%20request?color=blue)](https://github.com/surajverma/homehub/issues?q=is%3Aissue+is%3Aopen+label%3A%22feature+request)
-[![GitHub Stars](https://img.shields.io/github/stars/surajverma/homehub)](https://github.com/surajverma/homehub/stargazers)
-[![Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fsurajverma%2Fhomehub&query=downloadCount&style=social&logo=github&label=Docker%20Pulls)](https://github.com/surajverma/homehub/pkgs/container/homehub)
+# HomeHub (Whobrey fork)
 
-> **Maintainer Note**  
-> Thank you for your interest in this project! I originally started it as a personal utility and never expected it to grow so quickly—I’m genuinely thrilled and grateful that it’s become helpful to you and your family.  
->  
-> Please note that I am currently the sole maintainer and manage this repository alongside a full-time job, which means the time I can give to this project is somewhat limited. Responses to issues, pull requests, or questions may be delayed, especially during busy periods at work or at home.  
->  
-> I typically work on the project after office hours or on weekends, depending on my availability and energy. Your patience, understanding, and support mean a lot—thank you for helping make this project better!
+[![CI/CD](https://github.com/mwhobrey/homehub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mwhobrey/homehub/actions/workflows/docker-publish.yml)
+[![GitHub last commit](https://img.shields.io/github/last-commit/mwhobrey/homehub)](https://github.com/mwhobrey/homehub/commits/main)
 
+> **Fork of [surajverma/homehub](https://github.com/surajverma/homehub)** — extended for a production household deployment (Firebase auth, full calendar, school, to-do lists, in-app settings).  
+> **Do not expect `ghcr.io/surajverma/homehub:latest` to include these changes** — build this repo’s image locally or from your own registry.  
+> See **[CHANGELOG.md](CHANGELOG.md)** for fork release notes and **[CONTRIBUTING.md](CONTRIBUTING.md)** for development guidelines.
 
-# 🏡 HomeHub: Your All-In-One Family Dashboard
+---
 
-Ever wanted a simple, private spot on your home network for your family's daily stuff? That's HomeHub. It's a lightweight, self-hosted web app that turns any computer (even a Raspberry Pi!) into a central hub for shared notes, shopping lists, chores, a media downloader, and even a family expense tracker.
+# HomeHub: Your All-In-One Family Dashboard
 
-It’s designed to be easy to use for everyone in the family, with a clean interface that works great on any device.
+A lightweight, self-hosted web app that turns any computer (even a Raspberry Pi) into a private hub for shared notes, lists, chores, calendar, school, expenses, and more. Designed for families on a **trusted home network**, with an optional **internet-facing** path (Firebase + reverse proxy + hardening).
 
-## What Can It Do?
+## Fork upgrades (vs upstream)
 
-HomeHub is packed with useful tools to make family life a little more organized:
+| Area | What you get in this fork |
+|------|---------------------------|
+| **Settings** | **Preferences** (`/settings`) — per-user light/dark/system mode and personal theme colors. **System** (`/settings/system`, admin) — hub name, feature toggles, weather, reminder defaults, **custom sidebar menu labels** (no more editing YAML for routine tweaks). |
+| **To-do lists** | Multi-list tasks with sharing, due dates, recurrence, tags, assignees; optional calendar sync (`/todo-lists`). |
+| **Calendar** | Full UI at `/calendar` (week grid, drag-reschedule, recurrence, categories). |
+| **Google Calendar** | OAuth sync, import wizard, mapping, bidirectional/manual modes (Firebase + `google_calendar` in config). |
+| **Personal calendars** | Household + private calendars, sharing, filtered home reminders. |
+| **School** | Homeschool module: classes, assignments, submissions, gradebook, attendance (`/school`). |
+| **Auth & deploy** | Firebase Google sign-in, allowlists, [`docs/DEPLOY.md`](docs/DEPLOY.md), `compose.prod.yml`, Caddy-oriented production layout. |
+| **Security** | Media allowlists, QR encryption, SSRF checks, optional hardening block in config. |
 
-* **📝 Shared Notes**: A simple place to jot down quick notes for everyone to see.
-* **☁️ Shared Cloud**: Easily upload and share files across your home network.
-* **🛒 Shopping List**: A collaborative list so you never forget the milk again. Comes with suggestions based on your history!
-* **✅ Chore Tracker**: A simple to-do list for household tasks.
-* **🗓️ Calendar & Reminders**: A shared calendar to keep track of important dates.
-* **👋 Who's Home?**: See at a glance who is currently home.
-* **💰 Expense Tracker**: A powerful tool to track family spending, with support for recurring bills like newspapers, milk, or subscriptions.
-* **🎬 Media Downloader**: Save videos or music from popular sites directly to your server.
-* ...and more, including a **Recipe Book**, **Expiry Tracker**, **URL Shortener**, **PDF Compressor**, **Weather Updates** and **QR Code Generator**!
+**Chores** remain a simpler household chore list; use **To-do lists** for richer task management.
 
-## Salient Features
-* **Private & Self-Hosted**: All your data stays on your network. No cloud, no tracking.
-* **Simple & Lightweight**: Runs smoothly on minimal hardware.
-* **Family-Focused**: Designed to be intuitive for users of all technical skill levels.
-* **Customizable**: Toggle features on or off and even change the color theme right from the `config.yml` file.
+## What can it do?
+
+Core tools from upstream, plus fork modules above:
+
+- **Shared notes**, **shared cloud**, **shopping list** (with history suggestions)
+- **Chores** and **to-do lists**
+- **Calendar & reminders** (dashboard widget + full calendar page)
+- **Who's home** and **personal status** (dashboard widgets)
+- **Expense tracker** (recurring bills, categories)
+- **School** (assignments, grading, gradebook)
+- **Recipe book**, **expiry tracker**, **URL shortener**, **PDF compressor**, **media downloader**, **QR generator**
+- **Weather widget** (Open-Meteo, optional)
+
+## Salient features
+
+- **Private & self-hosted** — data stays on your hardware (SQLite + mounted volumes).
+- **Configurable** — `config.yml` for operators; **in-app system settings** for admins; **per-user preferences** for appearance.
+- **Feature toggles** — hide sidebar modules without removing routes entirely.
+- **PWA** — manifest + service worker for installable / offline-static behavior.
 
 ![homehub](https://github.com/user-attachments/assets/55b1c580-8897-4073-9e51-2a892a2bdcd4)
 
-## Getting Started is Easy
+## Quick start (Docker)
 
-The best way to run HomeHub is with Docker. It's quick and keeps everything tidy
-
-1. First, copy the `config-example.yml` to `config.yml`. This is where you'll name your hub and add family members. You can also set an optional password to protect the whole site.
-<details>
-  <summary>Click to see an example config.yml</summary>
-
-
+1. Copy **`config-example.yml`** → **`config.yml`** and edit (family members, toggles, auth).
+2. Use **`compose.yml`** for a simple LAN trial, or **`compose.prod.yml`** + [`docs/DEPLOY.md`](docs/DEPLOY.md) for Firebase + HTTPS.
 
 ```yaml
-instance_name: "My Home Hub"
-password: "" #leave blank for password less access
-admin_name: "Administrator"
-feature_toggles:
-  shopping_list: true
-  media_downloader: true
-  pdf_compressor: true
-  qr_generator: true
-  notes: true
-  shared_cloud: true
-  who_is_home: true
-  personal_status: true
-  chores: true
-  recipes: true
-  expiry_tracker: true
-  url_shortener: true
-  expense_tracker: true
-
-family_members:
-  - Mom
-  - Dad
-  - Dipanshu
-  - Vivek
-  - India
-
-reminders:
-  # time_format controls how reminder times are displayed in the UI.
-  # Allowed values: "12h" (default) or "24h". Remove or leave blank to fall back to 12h.
-  time_format: 12h
-
-  # calendar_start_day controls which day the reminders calendar starts on.
-  # Accepts full weekday names (sunday, saturday).  
-  calendar_start_day: monday #default is Sunday, comment this line to switch to default
-
-  # Example reminder categories (keys lowercase no spaces recommended)
-  categories:
-    - key: health
-      label: Health
-      color: "#dc2626"
-    - key: bills
-      label: Bills
-      color: "#0d9488"
-    - key: school
-      label: School
-      color: "#7c3aed"
-    - key: family
-      label: Family
-      color: "#2563eb"
-
-#Optional settings
-theme:
-  primary_color: "#1d4ed8"
-  secondary_color: "#a0aec0"
-  background_color: "#f7fafc"
-  card_background_color: "#fff"
-  text_color: "#333"
-  sidebar_background_color: "#2563eb"
-  sidebar_text_color: "#ffffff"
-  sidebar_link_color: "rgba(255,255,255,0.95)"
-  sidebar_link_border_color: "rgba(255,255,255,0.18)"
-  sidebar_active_color: "#3b82f6"
-```
-
-</details>
-
-**2. Run with Docker Compose**
-
-Use the provided `compose.yml` file to get started in seconds:
-
-```yaml
-# compose.yml
+# compose.yml (excerpt)
 services:
   homehub:
-    container_name: homehub
-    image: ghcr.io/surajverma/homehub:latest
+    image: ghcr.io/surajverma/homehub:latest   # upstream image — fork users should build:
+    # build: .                                 # docker compose build
     ports:
-      - "5000:5000" #app listens internally on port 5000
-    environment:
-      - FLASK_ENV=production
-      - SECRET_KEY=${SECRET_KEY:-} # set via .env; falls back to random if not provided
+      - "5000:5000"
     volumes:
       - ./uploads:/app/uploads
       - ./media:/app/media
@@ -142,144 +71,112 @@ services:
       - ./config.yml:/app/config.yml:ro
 ```
 
+**This fork:** build from source so you get calendar, school, settings, and related fixes:
+
 ```bash
-docker compose up -d
+docker compose -f compose.prod.yml up -d --build
 ```
-That's it! Open your browser and head to [http://localhost:5000](http://localhost:5000)
+
+Open [http://localhost:5000](http://localhost:5000).
+
+<details>
+<summary>Example config.yml (abbreviated)</summary>
+
+See **`config-example.yml`** for the full template (Firebase, Google Calendar, school roles, hardening, `nav_labels`, etc.).
+
+```yaml
+instance_name: "My Home Hub"
+
+auth:
+  mode: legacy   # or firebase for public internet
+  allowed_emails: []
+  admin_emails: []
+
+feature_toggles:
+  calendar: true
+  school: true
+  todo_list: true
+  chores: true
+  # ... see config-example.yml
+
+# Optional custom sidebar names (or set in System → Menu labels)
+# nav_labels:
+#   chores: "Honey-Do"
+#   school: "Homeschool"
+
+reminders:
+  time_format: 12h
+  calendar_start_day: monday
+
+theme:
+  primary_color: "#1d4ed8"
+  # ... household defaults; users can override in Preferences
+```
+
+</details>
+
+## Settings (in-app)
+
+| Page | Path | Who |
+|------|------|-----|
+| **Preferences** | `/settings` | Each signed-in user — color mode (light / dark / match device), personal theme colors |
+| **System** | `/settings/system` | Admins — hub name, feature toggles, weather, reminder display defaults, **menu label renames** |
+
+System changes are stored in SQLite (`app_setting`) and merged over `config.yml` at runtime. **Reset** on the system page clears DB overrides only (does not edit `config.yml` on disk). Auth secrets, hardening, and Google OAuth client IDs remain file/env based.
 
 ## Theming
 
-HomeHub follows your system dark/light mode. You can customize colors via `config.yml > theme`.
+- **Household defaults:** `config.yml` → `theme`
+- **Per user:** **Preferences** → appearance + colors (does not change other users’ screens)
+- **Dark mode:** user choice or OS (`system`); dark palette still applies tuned surface colors in CSS
 
-Configurable keys:
+Configurable keys are listed in `config-example.yml` under `theme:`.
 
-```yaml
-theme:
-  # Accent colors
-  primary_color: "#1d4ed8"
-  secondary_color: "#a0aec0"
-  # Surfaces & text
-  background_color: "#f7fafc"
-  card_background_color: "#ffffff"
-  text_color: "#333333"
-  # Sidebar palette
-  sidebar_background_color: "#2563eb"
-  sidebar_text_color: "#ffffff"                # text color used for the sidebar title and labels
-  sidebar_link_color: "rgba(255,255,255,0.95)" # link text color in sidebar items
-  sidebar_link_border_color: "rgba(255,255,255,0.18)" # subtle border around sidebar links
-```
+## Weather widget
 
-Tips:
-- Want higher contrast in the sidebar? Increase `sidebar_link_border_color` opacity (e.g., `rgba(255,255,255,0.3)`).
-- Prefer lighter/darker accents? Tweak `primary_color` and `secondary_color`.
-- Dark mode palette adapts automatically; the variables above apply to light mode, while dark mode uses tuned counterparts for good contrast.
+Optional dashboard widget via Open-Meteo. Enable in **System settings** or `config.yml` → `weather` (`enabled`, coordinates, `units`, `compact` / `detailed`). See upstream privacy note: requests go to Open-Meteo when enabled.
 
-## Weather Widget
+## Development
 
-HomeHub includes an optional weather widget powered by [Open-Meteo](https://open-meteo.com/), a free weather API. The widget displays current weather conditions and optionally today's forecast on your dashboard.
+Full setup, testing, commit style, and PR checklist: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
-**By default, the weather widget is hidden.** You can enable it through `config.yml`:
-
-```yaml
-weather:
-  enabled: true # set to true to show the widget
-  label: "" # optional location label (e.g., "Kolkata"). Leave blank to hide.
-  latitude: "" # optional, leave empty to use browser geolocation
-  longitude: "" # optional, leave empty to use browser geolocation
-  timezone: "" # optional, e.g., "Asia/Kolkata" or "America/New_York"; if unset, API uses timezone=auto
-  units: metric # metric or imperial (default: metric)
-  view: compact # compact or detailed (detailed shows today's forecast: sunrise, sunset, UV, rain %, highs/lows)
-```
-
-**Features:**
-- **Two view modes:**
-  - `compact`: Shows current temperature, weather condition, feels like, wind (with direction and gusts), humidity, and recent precipitation
-  - `detailed`: Adds today's forecast with sunrise/sunset times, UV index, precipitation probability, and daily high/low temperatures
-- **Smart caching:** Weather data is cached for 15 minutes to respect API rate limits and improve performance
-- **Flexible location:** Use configured coordinates or browser geolocation
-- **Timezone support:** Displays times in your configured timezone, or uses automatic detection
-- **Unit selection:** Choose between metric (°C, km/h, mm) or imperial (°F, mph, mm) units
-
-**Privacy Note:** When enabled, the widget makes API requests to Open-Meteo's servers. Please review [Open-Meteo's privacy policy](https://open-meteo.com/en/terms) for details on their data handling practices.
-
-## Development Setup
-
-To contribute or run & build HomeHub locally, follow these steps:
-
-### 1. Clone the Repository
 ```bash
-git clone https://github.com/surajverma/homehub.git
-cd homehub
-```
-
-### 2. Python Environment Setup
-```bash
-python -m venv venv
-venv\Scripts\activate  # On Windows
 pip install -r requirements.txt
+npm install && npm run build:css
+cp config-example.yml config.yml
+python run.py
 ```
 
-### 3. Configuration
-- Copy `config-example.yml` to `config.yml` and edit as needed for your family, features, and theme.
-
-### 4. CSS Build (Tailwind + Custom Styles)
 ```bash
-npm install
-npm run build:css
-```
-- For live CSS rebuilds during development:
-```bash
-npm run watch:css
+pytest tests/ -q    # PYTHONPATH=. on Windows if needed
 ```
 
-### 5. Running the App
-- **With Docker (recommended):**
-  ```bash
-  docker compose up -d
-  ```
-- **Locally (for development):**
-  ```bash
-  python run.py
-  ```
-  (Ensure you have built CSS and set up your config.)
+Maintainer/agent docs: [`.cursor/runbook/`](.cursor/runbook/).
 
-### 6. Troubleshooting
-- If you see missing dependency errors, ensure you have run both `pip install -r requirements.txt` and `npm install`.
-- If port 5000 is in use, stop the conflicting service or change the port in `compose.yml` and `config.yml`.
-- For Docker issues, try `docker compose down` then `docker compose up -d`.
+## Documentation map
 
+| Document | Purpose |
+|----------|---------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to develop and open PRs in this fork |
+| [CHANGELOG.md](CHANGELOG.md) | Fork feature history and unreleased notes |
+| [config-example.yml](config-example.yml) | Authoritative config template |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Firebase, Caddy, production compose |
+| [.cursor/runbook/](.cursor/runbook/) | Architecture and file map for maintainers |
+
+## Upstream & attribution
+
+HomeHub was created by [Suraj Verma](https://github.com/surajverma/homehub). This fork retains the MIT license and adds household-specific features listed in [CHANGELOG.md](CHANGELOG.md).
+
+If you find the original project useful, you can [buy the upstream maintainer a coffee ☕](https://ko-fi.com/skv).
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
-## Contributing
+## Disclaimer & security
 
-Contributions are always welcome! If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request.
+Software is provided **as is**, without warranty. Intended for **trusted networks** by default.
 
-## Disclaimer & Security Notice
+**Public internet:** use Firebase allowlists, TLS (e.g. Caddy), strong `SECRET_KEY`, and `hardening` options — follow [`docs/DEPLOY.md`](docs/DEPLOY.md). You are responsible for reviewing exposure before going live.
 
-This software is being provided to the community "as is." This means it comes **without any warranty or guarantee of any kind.** While I've done my best to build it, I can't promise it will be perfect, fit your exact needs, or be 100% free of bugs.
-
-**Please be aware that you are using this software at your own risk.** The authors and contributors are not responsible for any problems, damages, or data loss that might occur from using it.
-
-### 🛡️ Important Security Notice
-
-This project is built for use on a **local or trusted network** (like your home).
-
-It is **not designed or hardened to be safely exposed to the public internet.** If you choose to host this software publicly, you are solely responsible for performing a full security review and adding the necessary protections before you do so.
-
-### 🌤️ Weather Data & Third-Party Services
-
-The optional weather widget uses [Open-Meteo](https://open-meteo.com/), a free weather API service. When the weather widget is enabled:
-- Your browser makes requests to Open-Meteo's servers to fetch weather data
-- Location coordinates (latitude/longitude) are sent to their API
-- Open-Meteo has its own [privacy policy](https://open-meteo.com/en/terms) and terms of service
-
-By enabling the weather widget, you acknowledge that weather data is provided by a third-party service and is subject to their policies. HomeHub itself does not store or process weather data beyond local browser caching.
-
-## Have Fun!
-
-This project was built to be a practical tool for my own family, and I hope it's useful for yours too.
-
-If you find HomeHub useful, you can [buy me a coffee ☕](https://ko-fi.com/skv).
+**Weather:** optional third-party API ([Open-Meteo terms](https://open-meteo.com/en/terms)).
