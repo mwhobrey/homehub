@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<script src="{{ url_for('static', filename='js/settings.js') }}?v={{ asset_version }}" defer></script>
+{% endblock %}
+{% block content %}
+<div class="settings-page" id="settingsApp">
+    <header class="settings-page-header">
+        <div>
+            <h1><i class="fa-solid fa-server" style="color:var(--primary-color)" aria-hidden="true"></i> System settings</h1>
+            <p>
+                Household-wide options for every user. Overrides <code class="text-xs px-1 py-0.5 rounded" style="background:var(--secondary-bg)">config.yml</code>
+                until reset. Personal theme and light/dark mode are under <a href="{{ url_for('main.settings_user_page') }}" class="underline" style="color:var(--primary-color)">Preferences</a>.
+            </p>
+        </div>
+    </header>
+
+    {% if settings_form.has_db_overrides %}
+    <div class="settings-status settings-status--warn mb-4" role="status">
+        <i class="fa-solid fa-database text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden="true"></i>
+        <span>System overrides are active — some values differ from <strong>config.yml</strong> until you reset.</span>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('main.settings_system_page') }}" id="settingsForm" class="settings-layout">
+        {% if not uses_firebase %}
+        <input type="hidden" name="user" id="settings-user" value="">
+        {% endif %}
+
+        <nav class="settings-nav" aria-label="System settings sections">
+            <button type="button" class="settings-nav-btn" data-settings-tab="general" aria-current="page">
+                <i class="fa-solid fa-house w-4 text-center" aria-hidden="true"></i> General
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="features">
+                <i class="fa-solid fa-sliders w-4 text-center" aria-hidden="true"></i> Features
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="weather">
+                <i class="fa-solid fa-cloud-sun w-4 text-center" aria-hidden="true"></i> Weather
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="calendar">
+                <i class="fa-solid fa-calendar w-4 text-center" aria-hidden="true"></i> Calendar
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="labels">
+                <i class="fa-solid fa-tags w-4 text-center" aria-hidden="true"></i> Menu labels
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="advanced">
+                <i class="fa-solid fa-file-lines w-4 text-center" aria-hidden="true"></i> File-only
+            </button>
+        </nav>
+
+        <div class="settings-panels">
+            <section class="settings-panel is-active" data-settings-panel="general" id="settings-general">
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Hub identity</h2>
+                        <p>Name shown in the sidebar, browser tab, and welcome page for everyone.</p>
+                    </div>
+                    <div class="settings-field max-w-md">
+                        <label for="instance_name">Hub name</label>
+                        <input type="text" id="instance_name" name="instance_name" maxlength="120" class="settings-input"
+                               value="{{ settings_form.instance_name }}" autocomplete="organization">
+                    </div>
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="features" id="settings-features" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Sidebar &amp; modules</h2>
+                        <p>Turn features off to hide nav links for the whole household.</p>
+                    </div>
+                    <div class="settings-feature-toolbar">
+                        <div class="settings-feature-search">
+                            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                            <input type="search" id="settingsFeatureSearch" placeholder="Search features…" autocomplete="off" aria-label="Search features">
+                        </div>
+                    </div>
+                    {% for group in settings_form.feature_groups %}
+                    <div class="settings-feature-group">
+                        <p class="settings-feature-group__title">{{ group.title }}</p>
+                        <p class="settings-feature-group__desc">{{ group.description }}</p>
+                        <div class="settings-feature-grid">
+                            {% for item in group['items'] %}
+                            <label class="settings-feature-card {% if not item.enabled %}is-off{% endif %}"
+                                   data-feature-label="{{ item.label }}">
+                                <span class="settings-feature-card__icon" aria-hidden="true">
+                                    <i class="fa-solid {{ item.icon }}"></i>
+                                </span>
+                                <span class="settings-feature-card__label">{{ item.label }}</span>
+                                <span class="settings-switch">
+                                    <input type="checkbox" name="toggle_{{ item.key }}" value="1"
+                                           {% if item.enabled %}checked{% endif %}
+                                           aria-label="{{ item.label }}">
+                                    <span class="settings-switch__track" aria-hidden="true"></span>
+                                </span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="weather" id="settings-weather" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Weather widget</h2>
+                        <p>Dashboard weather for all users (Open-Meteo).</p>
+                    </div>
+                    <div class="settings-toggle-row mb-4">
+                        <div class="settings-toggle-row__text">
+                            <strong>Enable weather</strong>
+                            <span>Show conditions on the welcome page</span>
+                        </div>
+                        <span class="settings-switch">
+                            <input type="checkbox" name="weather_enabled" value="1" id="weather_enabled"
+                                   {% if settings_form.weather.enabled %}checked{% endif %}
+                                   aria-label="Enable weather on dashboard">
+                            <span class="settings-switch__track" aria-hidden="true"></span>
+                        </span>
+                    </div>
+                    <div class="settings-grid settings-grid--2" id="settingsWeatherFields">
+                        <div class="settings-field">
+                            <label for="weather_label">Label</label>
+                            <input type="text" id="weather_label" name="weather_label" class="settings-input"
+                                   value="{{ settings_form.weather.label }}" placeholder="Home">
+                        </div>
+                        <div class="settings-field">
+                            <label for="weather_timezone">Timezone <span class="font-normal text-xs" style="color:var(--muted-text)">(optional)</span></label>
+                            <input type="text" id="weather_timezone" name="weather_timezone" class="settings-input"
+                                   placeholder="America/Chicago" value="{{ settings_form.weather.timezone }}">
+                        </div>
+                        <div class="settings-field">
+                            <label for="weather_latitude">Latitude</label>
+                            <input type="text" id="weather_latitude" name="weather_latitude" class="settings-input"
+                                   inputmode="decimal" value="{{ settings_form.weather.latitude }}">
+                        </div>
+                        <div class="settings-field">
+                            <label for="weather_longitude">Longitude</label>
+                            <input type="text" id="weather_longitude" name="weather_longitude" class="settings-input"
+                                   inputmode="decimal" value="{{ settings_form.weather.longitude }}">
+                        </div>
+                        <div class="settings-field">
+                            <label for="weather_units">Units</label>
+                            <select id="weather_units" name="weather_units" class="settings-input">
+                                <option value="metric" {% if settings_form.weather.units == 'metric' %}selected{% endif %}>Metric (°C)</option>
+                                <option value="imperial" {% if settings_form.weather.units == 'imperial' %}selected{% endif %}>Imperial (°F)</option>
+                            </select>
+                        </div>
+                        <div class="settings-field">
+                            <label for="weather_view">Layout</label>
+                            <select id="weather_view" name="weather_view" class="settings-input">
+                                <option value="compact" {% if settings_form.weather.view == 'compact' %}selected{% endif %}>Compact</option>
+                                <option value="detailed" {% if settings_form.weather.view == 'detailed' %}selected{% endif %}>Detailed</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="calendar" id="settings-calendar" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Reminders &amp; calendar</h2>
+                        <p>Household display defaults for calendar and reminders.</p>
+                    </div>
+                    <div class="settings-grid settings-grid--2">
+                        <div class="settings-field">
+                            <label for="reminder_time_format">Time format</label>
+                            <select id="reminder_time_format" name="reminder_time_format" class="settings-input">
+                                <option value="12h" {% if settings_form.reminders.time_format == '12h' %}selected{% endif %}>12-hour</option>
+                                <option value="24h" {% if settings_form.reminders.time_format == '24h' %}selected{% endif %}>24-hour</option>
+                            </select>
+                        </div>
+                        <div class="settings-field">
+                            <label for="reminder_calendar_start_day">Week starts on</label>
+                            <select id="reminder_calendar_start_day" name="reminder_calendar_start_day" class="settings-input">
+                                {% set start_day = (settings_form.reminders.calendar_start_day or 'sunday')|lower %}
+                                <option value="sunday" {% if start_day == 'sunday' %}selected{% endif %}>Sunday</option>
+                                <option value="monday" {% if start_day == 'monday' %}selected{% endif %}>Monday</option>
+                                <option value="saturday" {% if start_day == 'saturday' %}selected{% endif %}>Saturday</option>
+                            </select>
+                        </div>
+                        <div class="settings-field" style="grid-column:1/-1">
+                            <label for="reminder_default_timezone">Default timezone (IANA)</label>
+                            <input type="text" id="reminder_default_timezone" name="reminder_default_timezone" class="settings-input"
+                                   placeholder="America/Chicago" value="{{ settings_form.reminders.default_timezone }}">
+                            <p class="settings-field-hint">Used when an event has no timezone set.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="labels" id="settings-labels" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Sidebar menu labels</h2>
+                        <p>Rename what appears in the left navigation for everyone. Leave blank to use the default. Icons and URLs stay the same.</p>
+                    </div>
+                    {% for group in settings_form.nav_label_groups %}
+                    <div class="settings-feature-group">
+                        <p class="settings-feature-group__title">{{ group.title }}</p>
+                        {% if group.description %}
+                        <p class="settings-feature-group__desc">{{ group.description }}</p>
+                        {% endif %}
+                        <div class="settings-grid settings-grid--2">
+                            {% for item in group['items'] %}
+                            <div class="settings-field">
+                                <label for="nav_label_{{ item.key }}">{{ item.default }}</label>
+                                <input type="text" id="nav_label_{{ item.key }}" name="nav_label_{{ item.key }}"
+                                       class="settings-input" maxlength="80"
+                                       placeholder="{{ item.default }}"
+                                       value="{{ item.value }}"
+                                       autocomplete="off">
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="advanced" id="settings-advanced" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Configured in files only</h2>
+                        <p>Default household colors live in <code class="text-xs">config.yml</code> under <code class="text-xs">theme</code>. Users can override colors for themselves in Preferences.</p>
+                    </div>
+                    <ul class="settings-file-note">
+                        <li><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span><strong>Auth</strong> — Firebase, passwords, admin emails, allowlists</span></li>
+                        <li><i class="fa-solid fa-lock" aria-hidden="true"></i><span><strong>Hardening</strong> — session and security flags</span></li>
+                        <li><i class="fa-brands fa-google" aria-hidden="true"></i><span><strong>Google Calendar</strong> — OAuth client; connect at <a href="/calendar" class="underline" style="color:var(--primary-color)">Calendar</a></span></li>
+                        <li><i class="fa-solid fa-users" aria-hidden="true"></i><span><strong>Family members &amp; school roles</strong> — YAML lists</span></li>
+                        <li><i class="fa-solid fa-wallet" aria-hidden="true"></i><span><strong>Expense currency &amp; categories</strong> — <a href="/expenses" class="underline" style="color:var(--primary-color)">Expenses</a> page</span></li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+
+        <div class="settings-sticky-bar" role="region" aria-label="Save system settings">
+            <span class="settings-sticky-bar__hint hidden" id="settingsDirtyHint">Unsaved changes</span>
+            <span class="settings-sticky-bar__hint" id="settingsSaveHint">Applies to everyone after save</span>
+            <div class="settings-sticky-bar__actions">
+                <button type="submit" class="btn btn-primary inline-flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save system settings
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <div class="settings-card settings-danger-zone mt-4">
+        <div class="settings-card__head">
+            <h2>Reset system overrides</h2>
+            <p>Clear household DB overrides only. Does not change user preferences or <strong>config.yml</strong> on disk.</p>
+        </div>
+        <form method="POST" action="{{ url_for('main.settings_reset_overrides') }}"
+              onsubmit="return confirm('Clear all system UI overrides and use config.yml again?');">
+            {% if not uses_firebase %}
+            <input type="hidden" name="user" id="settings-reset-user" value="">
+            {% endif %}
+            <button type="submit" class="btn btn-danger inline-flex items-center gap-2">
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reset system overrides
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

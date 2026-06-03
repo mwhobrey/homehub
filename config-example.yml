@@ -16,6 +16,11 @@ auth:
 
 password: "" # legacy only; leave blank for open LAN or set for shared password
 admin_name: "Administrator"
+# Optional sidebar display names (defaults used if omitted; admins can also set via System → Menu labels)
+# nav_labels:
+#   chores: "Honey-Do"
+#   school: "Homeschool"
+
 feature_toggles:
   shopping_list: true
   media_downloader: true

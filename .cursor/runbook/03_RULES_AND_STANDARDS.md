@@ -16,7 +16,8 @@
 ### Templates & JS
 
 - **Feature visibility:** Guard nav and pages with `config.feature_toggles.get('feature_key')` in `base.html`.
-- **Theme:** CSS variables from `config.theme` in `base.html`; respect `data-theme` dark mode.
+- **Theme:** CSS variables from `effective_theme` in `base.html` (household `config.theme` + per-user overrides); `user_color_mode` drives `data-theme` (`system` | `light` | `dark`).
+- **Nav labels:** Sidebar text via `nav_label('key')` — defaults in `settings_service.NAV_LABEL_DEFAULTS`, overrides in `config.nav_labels` / System → Menu labels.
 - **JSON in HTML:** Prefer `|tojson` filter for embedding data (see reminders bootstrap); avoid raw concatenation.
 - **CDN assets:** Font Awesome + Google Fonts loaded from CDN in `base.html` (offline/PWA limited without network).
 
@@ -46,7 +47,7 @@
 
 1. **Server session** is the only auth state — do not duplicate auth in localStorage except Firebase client SDK tokens before `POST /auth/session`.
 2. **Do not trust client `creator`** when `auth.mode == 'firebase'`.
-3. **Config reload** every request reloads `config.yml` — tests set `TESTING=True` to skip this.
+3. **Config reload** every request reloads `config.yml` and merges `app_setting` overrides (`auth.reload_config_and_require_auth`); in `TESTING`, YAML is not re-read from disk but DB overrides still merge.
 4. **Tags** are JSON strings in DB; validate/normalize in route handlers before save.
 5. **Recurring engines** (expenses, reminders, chores) use `last_generated_date` / `effective_from` — follow existing generators when adding recurrence fields.
 

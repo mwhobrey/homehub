@@ -10,20 +10,20 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Config-driven theme variables (takes priority) -->
-    {% set pc = config.theme.primary_color.lstrip('#') %}
+    {% set pc = effective_theme.primary_color.lstrip('#') %}
     <style id="config-theme-vars">
-    /* Apply configured colors only when not in dark mode so dark overrides can take effect */
+    /* Per-user theme colors; dark palette still overrides surfaces when data-theme=dark */
     :root:not([data-theme="dark"]), [data-theme="light"] {
-        --primary-color: {{ config.theme.primary_color }};
-        --secondary-color: {{ config.theme.secondary_color }};
-        --background-color: {{ config.theme.background_color }};
-        --card-background-color: {{ config.theme.card_background_color }};
-        --text-color: {{ config.theme.text_color }};
-        --sidebar-background-color: {{ config.theme.sidebar_background_color }};
-        --sidebar-text-color: {{ config.theme.sidebar_text_color }};
-        --sidebar-link-color: {{ config.theme.sidebar_link_color }};
-        --sidebar-link-border-color: {{ config.theme.sidebar_link_border_color }};
-        --sidebar-active-color: {{ config.theme.sidebar_active_color }};
+        --primary-color: {{ effective_theme.primary_color }};
+        --secondary-color: {{ effective_theme.secondary_color }};
+        --background-color: {{ effective_theme.background_color }};
+        --card-background-color: {{ effective_theme.card_background_color }};
+        --text-color: {{ effective_theme.text_color }};
+        --sidebar-background-color: {{ effective_theme.sidebar_background_color }};
+        --sidebar-text-color: {{ effective_theme.sidebar_text_color }};
+        --sidebar-link-color: {{ effective_theme.sidebar_link_color }};
+        --sidebar-link-border-color: {{ effective_theme.sidebar_link_border_color }};
+        --sidebar-active-color: {{ effective_theme.sidebar_active_color }};
     }
     </style>
     {% if pc|length == 6 %}
@@ -59,7 +59,7 @@
     }
     </style>
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="{{ config.theme.primary_color }}">
+    <meta name="theme-color" content="{{ effective_theme.primary_color }}">
     <!-- App icons -->
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png">
@@ -90,10 +90,18 @@
     </script>
     <script>
         (function() {
+            const pref = {{ user_color_mode|tojson }};
             const mq = window.matchMedia('(prefers-color-scheme: dark)');
-            const apply = () => document.documentElement.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
+            const resolve = () => {
+                if (pref === 'light') return 'light';
+                if (pref === 'dark') return 'dark';
+                return mq.matches ? 'dark' : 'light';
+            };
+            const apply = () => document.documentElement.setAttribute('data-theme', resolve());
             apply();
-            try { mq.addEventListener('change', apply); } catch(e) { mq.addListener(apply); }
+            if (pref === 'system') {
+                try { mq.addEventListener('change', apply); } catch(e) { mq.addListener(apply); }
+            }
         })();
     </script>
 </head>
@@ -113,21 +121,23 @@
                 </div>
             </div>
             <nav class="flex-1 p-4 space-y-2 overflow-y-auto" id="sidebarNav">
-                <a href="/" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Welcome"><i class="fa-solid fa-house w-5 text-center"></i><span class="nav-label">Welcome</span></a>
-                {% if config.feature_toggles.get('calendar', True) %}<a href="/calendar" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Calendar"><i class="fa-solid fa-calendar-days w-5 text-center"></i><span class="nav-label">Calendar</span></a>{% endif %}
-                {% if config.feature_toggles.get('school', True) %}<a href="/school" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="School"><i class="fa-solid fa-graduation-cap w-5 text-center"></i><span class="nav-label">School</span></a>{% endif %}
-                {% if config.feature_toggles.get('notes') %}<a href="/notes" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shared Notes"><i class="fa-solid fa-note-sticky w-5 text-center"></i><span class="nav-label">Shared Notes</span></a>{% endif %}
-                {% if config.feature_toggles.get('shared_cloud') %}<a href="/upload" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shared Cloud"><i class="fa-solid fa-cloud w-5 text-center"></i><span class="nav-label">Shared Cloud</span></a>{% endif %}
-                {% if config.feature_toggles.get('shopping_list') %}<a href="/shopping" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Shopping List"><i class="fa-solid fa-cart-shopping w-5 text-center"></i><span class="nav-label">Shopping List</span></a>{% endif %}
-                {% if config.feature_toggles.get('chores') %}<a href="/chores" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Chores"><i class="fa-solid fa-broom w-5 text-center"></i><span class="nav-label">Chores</span></a>{% endif %}
-                {% if config.feature_toggles.get('todo_list', True) %}<a href="/todo-lists" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="To-Do Lists"><i class="fa-solid fa-list-check w-5 text-center"></i><span class="nav-label">To-Do Lists</span></a>{% endif %}
-                {% if config.feature_toggles.get('recipes') %}<a href="/recipes" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Recipe Book"><i class="fa-solid fa-utensils w-5 text-center"></i><span class="nav-label">Recipe Book</span></a>{% endif %}
-                {% if config.feature_toggles.get('expiry_tracker') %}<a href="/expiry" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Expiry Tracker"><i class="fa-solid fa-hourglass-half w-5 text-center"></i><span class="nav-label">Expiry Tracker</span></a>{% endif %}
-                {% if config.feature_toggles.get('url_shortener') %}<a href="/shorten" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="URL Shortener"><i class="fa-solid fa-link w-5 text-center"></i><span class="nav-label">URL Shortener</span></a>{% endif %}
-                {% if config.feature_toggles.get('media_downloader') %}<a href="/media" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Media Downloader"><i class="fa-solid fa-download w-5 text-center"></i><span class="nav-label">Media Downloader</span></a>{% endif %}
-                {% if config.feature_toggles.get('pdf_compressor') %}<a href="/pdfs" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="PDF Compressor"><i class="fa-solid fa-file-pdf w-5 text-center"></i><span class="nav-label">PDF Compressor</span></a>{% endif %}
-                {% if config.feature_toggles.get('qr_generator') %}<a href="/qr" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="QR Generator"><i class="fa-solid fa-qrcode w-5 text-center"></i><span class="nav-label">QR Generator</span></a>{% endif %}
-                {% if config.feature_toggles.get('expense_tracker', true) %}<a href="/expenses" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="Expense Tracker"><i class="fa-solid fa-wallet w-5 text-center"></i><span class="nav-label">Expense Tracker</span></a>{% endif %}
+                <a href="/" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('welcome') }}"><i class="fa-solid fa-house w-5 text-center"></i><span class="nav-label">{{ nav_label('welcome') }}</span></a>
+                {% if config.feature_toggles.get('calendar', True) %}<a href="/calendar" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('calendar') }}"><i class="fa-solid fa-calendar-days w-5 text-center"></i><span class="nav-label">{{ nav_label('calendar') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('school', True) %}<a href="/school" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('school') }}"><i class="fa-solid fa-graduation-cap w-5 text-center"></i><span class="nav-label">{{ nav_label('school') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('notes') %}<a href="/notes" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('notes') }}"><i class="fa-solid fa-note-sticky w-5 text-center"></i><span class="nav-label">{{ nav_label('notes') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('shared_cloud') %}<a href="/upload" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('shared_cloud') }}"><i class="fa-solid fa-cloud w-5 text-center"></i><span class="nav-label">{{ nav_label('shared_cloud') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('shopping_list') %}<a href="/shopping" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('shopping_list') }}"><i class="fa-solid fa-cart-shopping w-5 text-center"></i><span class="nav-label">{{ nav_label('shopping_list') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('chores') %}<a href="/chores" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('chores') }}"><i class="fa-solid fa-broom w-5 text-center"></i><span class="nav-label">{{ nav_label('chores') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('todo_list', True) %}<a href="/todo-lists" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('todo_list') }}"><i class="fa-solid fa-list-check w-5 text-center"></i><span class="nav-label">{{ nav_label('todo_list') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('recipes') %}<a href="/recipes" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('recipes') }}"><i class="fa-solid fa-utensils w-5 text-center"></i><span class="nav-label">{{ nav_label('recipes') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('expiry_tracker') %}<a href="/expiry" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('expiry_tracker') }}"><i class="fa-solid fa-hourglass-half w-5 text-center"></i><span class="nav-label">{{ nav_label('expiry_tracker') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('url_shortener') %}<a href="/shorten" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('url_shortener') }}"><i class="fa-solid fa-link w-5 text-center"></i><span class="nav-label">{{ nav_label('url_shortener') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('media_downloader') %}<a href="/media" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('media_downloader') }}"><i class="fa-solid fa-download w-5 text-center"></i><span class="nav-label">{{ nav_label('media_downloader') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('pdf_compressor') %}<a href="/pdfs" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('pdf_compressor') }}"><i class="fa-solid fa-file-pdf w-5 text-center"></i><span class="nav-label">{{ nav_label('pdf_compressor') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('qr_generator') %}<a href="/qr" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('qr_generator') }}"><i class="fa-solid fa-qrcode w-5 text-center"></i><span class="nav-label">{{ nav_label('qr_generator') }}</span></a>{% endif %}
+                {% if config.feature_toggles.get('expense_tracker', true) %}<a href="/expenses" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('expense_tracker') }}"><i class="fa-solid fa-wallet w-5 text-center"></i><span class="nav-label">{{ nav_label('expense_tracker') }}</span></a>{% endif %}
+                <a href="/settings" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('preferences') }}"><i class="fa-solid fa-user-gear w-5 text-center"></i><span class="nav-label">{{ nav_label('preferences') }}</span></a>
+                {% if current_user_is_admin %}<a href="/settings/system" class="flex items-center gap-3 py-2 px-4 rounded sidebar-link" title="{{ nav_label('system') }}"><i class="fa-solid fa-server w-5 text-center"></i><span class="nav-label">{{ nav_label('system') }}</span></a>{% endif %}
             </nav>
             <script>
             // Highlight active sidebar link

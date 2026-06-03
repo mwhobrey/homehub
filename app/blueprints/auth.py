@@ -16,6 +16,7 @@ from flask import (
 
 from ..blueprints import main_bp
 from ..config import load_config
+from ..settings_service import merge_runtime_settings
 from ..extensions import limiter
 from ..user_context import is_logged_in, uses_firebase
 from ..security import safe_local_redirect_path
@@ -43,11 +44,17 @@ def _public_endpoints() -> set[str]:
 
 @main_bp.before_app_request
 def reload_config_and_require_auth():
-    if not current_app.config.get('TESTING'):
-        try:
-            current_app.config['HOMEHUB_CONFIG'] = load_config()
-        except Exception:
-            pass
+    try:
+        if current_app.config.get('TESTING'):
+            from ..config import apply_config_defaults
+
+            base = apply_config_defaults(dict(current_app.config.get('HOMEHUB_CONFIG') or {}))
+            current_app.config['HOMEHUB_CONFIG'] = merge_runtime_settings(base)
+        else:
+            cfg = load_config()
+            current_app.config['HOMEHUB_CONFIG'] = merge_runtime_settings(cfg)
+    except Exception:
+        pass
     endpoint = request.endpoint or ''
     if endpoint.startswith('static') or endpoint in _public_endpoints():
         return None

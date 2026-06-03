@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<script src="{{ url_for('static', filename='js/settings_user.js') }}?v={{ asset_version }}" defer></script>
+{% endblock %}
+{% block content %}
+<div class="settings-page" id="settingsApp">
+    <header class="settings-page-header">
+        <div>
+            <h1><i class="fa-solid fa-user-gear" style="color:var(--primary-color)" aria-hidden="true"></i> Your preferences</h1>
+            <p>
+                Only you see these — pick light or dark mode without flashbanging the rest of the household.
+                {% if current_user_is_admin %}
+                Household-wide options are under <a href="{{ url_for('main.settings_system_page') }}" class="underline" style="color:var(--primary-color)">System settings</a>.
+                {% endif %}
+            </p>
+        </div>
+    </header>
+
+    {% if needs_legacy_user %}
+    <div class="settings-status mb-4" role="status">
+        <i class="fa-solid fa-user mt-0.5" aria-hidden="true"></i>
+        <span>Select your name in the header <strong>User</strong> switcher, then reload this page to load and save your preferences.</span>
+    </div>
+    {% elif user_prefs_form.has_user_overrides %}
+    <div class="settings-status settings-status--warn mb-4" role="status">
+        <i class="fa-solid fa-palette mt-0.5" aria-hidden="true"></i>
+        <span>Personal overrides are active for <strong>{{ current_user_name or 'you' }}</strong>.</span>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('main.settings_user_page') }}" id="settingsForm" class="settings-layout">
+        {% if not uses_firebase %}
+        <input type="hidden" name="user" id="settings-user" value="">
+        {% endif %}
+
+        <nav class="settings-nav" aria-label="Your preference sections">
+            <button type="button" class="settings-nav-btn" data-settings-tab="appearance" aria-current="page">
+                <i class="fa-solid fa-circle-half-stroke w-4 text-center" aria-hidden="true"></i> Appearance
+            </button>
+            <button type="button" class="settings-nav-btn" data-settings-tab="colors">
+                <i class="fa-solid fa-palette w-4 text-center" aria-hidden="true"></i> Colors
+            </button>
+        </nav>
+
+        <div class="settings-panels">
+            <section class="settings-panel is-active" data-settings-panel="appearance" id="settings-appearance">
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Light &amp; dark mode</h2>
+                        <p>Your choice applies only in this browser after you sign in. Others keep their own setting.</p>
+                    </div>
+                    <fieldset class="border-0 p-0 m-0">
+                        <legend class="sr-only">Color mode</legend>
+                        <div class="cal-segmented settings-appearance-modes" role="group" aria-label="Color mode">
+                            {% set mode = user_prefs_form.color_mode %}
+                            <label class="cal-segmented-btn cursor-pointer">
+                                <input type="radio" name="color_mode" value="system" class="sr-only" {% if mode == 'system' %}checked{% endif %}>
+                                <span><i class="fa-solid fa-desktop mr-1" aria-hidden="true"></i> Match device</span>
+                            </label>
+                            <label class="cal-segmented-btn cursor-pointer">
+                                <input type="radio" name="color_mode" value="light" class="sr-only" {% if mode == 'light' %}checked{% endif %}>
+                                <span><i class="fa-solid fa-sun mr-1" aria-hidden="true"></i> Light</span>
+                            </label>
+                            <label class="cal-segmented-btn cursor-pointer">
+                                <input type="radio" name="color_mode" value="dark" class="sr-only" {% if mode == 'dark' %}checked{% endif %}>
+                                <span><i class="fa-solid fa-moon mr-1" aria-hidden="true"></i> Dark</span>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <p class="settings-field-hint mt-3">Household default colors come from <code class="text-xs">config.yml</code>. Override them below if you want your own palette.</p>
+                </div>
+            </section>
+
+            <section class="settings-panel" data-settings-panel="colors" id="settings-colors" hidden>
+                <div class="settings-card">
+                    <div class="settings-card__head">
+                        <h2>Personal colors</h2>
+                        <p>Leave a field empty on save to keep your current value. Reset below to use household defaults only.</p>
+                    </div>
+                    {% macro theme_color_field(key, label) %}
+                    {% set current = user_prefs_form.effective_theme[key] %}
+                    {% set picker_val = current if current and current.startswith('#') and current|length >= 4 else '#2563eb' %}
+                    <div class="settings-field">
+                        <label for="theme_{{ key }}">{{ label }}</label>
+                        <div class="settings-color-row">
+                            <input type="color" data-theme-color="{{ key }}" value="{{ picker_val }}"
+                                   aria-label="{{ label }} color picker" title="{{ label }}">
+                            <input type="text" id="theme_{{ key }}" name="theme_{{ key }}" class="settings-input"
+                                   placeholder="{{ current or '#2563eb' }}" value=""
+                                   pattern="^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$" autocomplete="off">
+                        </div>
+                    </div>
+                    {% endmacro %}
+                    <p class="settings-feature-group__title mt-2 mb-2">Brand</p>
+                    <div class="settings-grid settings-grid--2 mb-2">
+                        {{ theme_color_field('primary_color', 'Primary') }}
+                        {{ theme_color_field('secondary_color', 'Secondary') }}
+                    </div>
+                    <p class="settings-feature-group__title mb-2">Layout</p>
+                    <div class="settings-grid settings-grid--2 mb-2">
+                        {{ theme_color_field('background_color', 'Background') }}
+                        {{ theme_color_field('card_background_color', 'Cards') }}
+                        {{ theme_color_field('text_color', 'Text') }}
+                    </div>
+                    <p class="settings-feature-group__title mb-2">Sidebar</p>
+                    <div class="settings-grid settings-grid--2 mb-2">
+                        {{ theme_color_field('sidebar_background_color', 'Background') }}
+                        {{ theme_color_field('sidebar_text_color', 'Text') }}
+                        {{ theme_color_field('sidebar_link_color', 'Links') }}
+                        {{ theme_color_field('sidebar_link_border_color', 'Link border') }}
+                        {{ theme_color_field('sidebar_active_color', 'Active item') }}
+                    </div>
+                    <div class="settings-theme-preview" id="settingsThemePreview" aria-hidden="true">
+                        <p class="settings-field-hint mb-2">Live preview (approximate)</p>
+                        <div class="settings-theme-preview__mini">
+                            <div class="settings-theme-preview__sidebar" style="background:var(--preview-sidebar-bg);color:var(--preview-sidebar-text)">
+                                Hub
+                            </div>
+                            <div class="settings-theme-preview__main" style="background:var(--preview-bg);color:var(--preview-text)">
+                                <span style="display:block;padding:0.35rem 0.5rem;border-radius:0.25rem;background:var(--preview-card)">Card surface</span>
+                                <span class="settings-theme-preview__chip" style="background:var(--preview-primary);color:#fff">Primary</span>
+                                <span class="settings-theme-preview__chip" style="background:var(--preview-sidebar-active);color:#fff">Active nav</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="settings-sticky-bar" role="region" aria-label="Save preferences">
+            <span class="settings-sticky-bar__hint hidden" id="settingsDirtyHint">Unsaved changes</span>
+            <span class="settings-sticky-bar__hint" id="settingsSaveHint">Only affects your account</span>
+            <div class="settings-sticky-bar__actions">
+                <button type="submit" class="btn btn-primary inline-flex items-center gap-2" {% if needs_legacy_user %}disabled{% endif %}>
+                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save preferences
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <div class="settings-card settings-danger-zone mt-4">
+        <div class="settings-card__head">
+            <h2>Reset your preferences</h2>
+            <p>Clear your personal color mode and color overrides. Household system settings are unchanged.</p>
+        </div>
+        <form method="POST" action="{{ url_for('main.settings_reset_user_preferences') }}"
+              onsubmit="return confirm('Reset your personal theme and appearance?');">
+            {% if not uses_firebase %}
+            <input type="hidden" name="user" id="settings-reset-user" value="">
+            {% endif %}
+            <button type="submit" class="btn btn-danger inline-flex items-center gap-2" {% if needs_legacy_user %}disabled{% endif %}>
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Reset my preferences
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

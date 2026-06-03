@@ -35,6 +35,7 @@ def apply_config_defaults(config: dict) -> dict:
     config.setdefault('admin_name', 'Administrator')
     # Family members default list (legacy UI picker)
     config.setdefault('family_members', [])
+    config.setdefault('nav_labels', {})
     # Auth block: mode legacy | firebase
     auth = config.setdefault('auth', {})
     auth.setdefault('mode', 'legacy')

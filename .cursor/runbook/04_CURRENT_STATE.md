@@ -11,6 +11,7 @@
 - **School module** (`/school`): classes, enrollments, assignments with deadlines, student submissions (file upload + external links), teacher grading/feedback, weighted gradebook, attendance, analytics; config under `school:` and toggle `feature_toggles.school`.
 - **Dedicated calendar** at `/calendar`: week time-grid, drag-reschedule, resize duration, recurring (RRULE export to Google), per-event timezone + attendees, sync conflict resolution UI, calendar lane filters, full color picker, wide modal Google import wizard (multi-column source/category grids, per-calendar mapping, default category names/colors from Google, import from any mapping step).
 - **Feature toggles** in `config.yml` hide sidebar entries without removing routes entirely (routes still exist if URL known).
+- **Settings split:** `/settings` (all users) — personal color mode + theme overrides in `app_setting` keyed per user; `/settings/system` (admin) — hub name, feature toggles, weather, reminder defaults, **sidebar menu label overrides** (merged over `config.yml`; reset clears system overrides only).
 - **SQLite persistence** with automatic table creation and incremental column migrations on startup.
 - **Tailwind UI** with config-driven theming and dark/light system preference.
 - **PWA:** manifest + service worker with versioned cache.

@@ -193,7 +193,9 @@ def create_app(test_config: dict | None = None):
         app.config.update(test_config)
 
     if 'HOMEHUB_CONFIG' not in app.config:
-        app.config['HOMEHUB_CONFIG'] = load_config()
+        from .settings_service import merge_runtime_settings
+        with app.app_context():
+            app.config['HOMEHUB_CONFIG'] = merge_runtime_settings(load_config())
     else:
         app.config['HOMEHUB_CONFIG'] = apply_config_defaults(app.config['HOMEHUB_CONFIG'])
 
@@ -588,6 +590,7 @@ def create_app(test_config: dict | None = None):
     from .blueprints import calendar_page  # noqa: F401
     from .blueprints import school  # noqa: F401
     from .blueprints import todos  # noqa: F401
+    from .blueprints import settings  # noqa: F401
     app.register_blueprint(main_bp)
 
     if _should_run_background_jobs(app):
@@ -596,14 +599,20 @@ def create_app(test_config: dict | None = None):
     @app.context_processor
     def inject_auth_state():
         from .user_context import current_display_name, is_logged_in, is_admin, uses_firebase
+        from .settings_service import resolve_nav_label
+        from .user_preferences_service import color_mode_for_request, effective_theme_for_request
 
+        cfg = app.config.get('HOMEHUB_CONFIG') or {}
         return {
             'is_authed': is_logged_in(),
-            'auth_mode': (app.config.get('HOMEHUB_CONFIG', {}).get('auth') or {}).get('mode', 'legacy'),
+            'auth_mode': (cfg.get('auth') or {}).get('mode', 'legacy'),
             'uses_firebase': uses_firebase(),
             'current_user_name': current_display_name(),
             'current_user_is_admin': is_admin(),
             'asset_version': resolve_asset_version(app),
+            'effective_theme': effective_theme_for_request(cfg),
+            'user_color_mode': color_mode_for_request(),
+            'nav_label': lambda key: resolve_nav_label(cfg, key),
         }
     
     # Add Jinja2 filter for JSON parsing

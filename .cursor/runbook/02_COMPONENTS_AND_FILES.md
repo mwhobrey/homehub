@@ -29,6 +29,8 @@ homehub/
 |--------|----------------|
 | `__init__.py` | App factory, DB init, SQLite auto-migrations, blueprint registration, Jinja `from_json` filter, security headers |
 | `config.py` | Load/normalize `config.yml` |
+| `settings_service.py` | Merge system `app_setting` UI overrides into runtime config |
+| `user_preferences_service.py` | Per-user theme + color mode in `app_setting` (`user_prefs:*`) |
 | `models.py` | All SQLAlchemy models (single file) |
 | `extensions.py` | Flask-Limiter instance |
 | `security.py` | bleach sanitization, SSRF URL checks, safe redirect/filename helpers |
@@ -68,6 +70,7 @@ All routes attach to **`main_bp`** (`blueprints/__init__.py`) — endpoint names
 | `shortener.py` | `/shorten`, `/s/<code>` | URL shortener |
 | `qr.py` | `/qr` | QR generator |
 | `weather.py` | `/api/weather` | Weather proxy/cache |
+| `settings.py` | `/settings`, `/settings/system`, reset routes | User preferences (per-user theme/mode) + admin system settings (DB overrides) |
 
 Side-effect imports: `app/__init__.py` imports each blueprint module so decorators register routes.
 
@@ -75,7 +78,8 @@ Side-effect imports: `app/__init__.py` imports each blueprint module so decorato
 
 | Template | Feature |
 |----------|---------|
-| `base.html` | Layout, sidebar (feature toggles), theme vars, SW registration |
+| `base.html` | Layout, sidebar (`nav_label()` overrides), per-user `effective_theme`, SW registration |
+| `settings_user.html`, `settings_system.html` | User preferences; admin system settings |
 | `index.html` | Dashboard: notice, compact reminders widget, who's home, weather slot |
 | `calendar.html` | Full calendar: views, event editor, Google setup tab |
 | `login.html` | Legacy password or Firebase |
@@ -87,7 +91,8 @@ Shared partial: `_flash.html`.
 
 | Path | Role |
 |------|------|
-| `input.css` / `output.css` | Tailwind source / built CSS |
+| `input.css` / `output.css` | Tailwind source / built CSS (`npm run build:css` after CSS edits) |
+| `js/settings.js`, `js/settings_user.js` | System settings tabs; user preferences (theme, color mode) |
 | `js/reminders_api.js` | Reminders + `/api/calendar/*` fetch helpers |
 | `js/color_picker.js` | Native color + hex field (`homehubColorPicker`) |
 | `js/calendar_app.js` | `/calendar`: month, week time-grid, agenda, lanes, drag-reschedule, recurring |
@@ -127,6 +132,7 @@ Tags on shopping/chores/recipes: JSON string in `tags` column, parsed via Jinja 
 | Env vars | `.env.example`: `SECRET_KEY`, `DOMAIN`, `MAX_UPLOAD_MB`, `SESSION_DAYS`, Firebase paths |
 | Flask app config | `create_app()` in `__init__.py` |
 | Runtime chore homepage toggle | DB `app_setting.show_chores_on_homepage` overrides config default |
+| Admin UI settings (features, weather, theme, reminders) | `/settings` → `app_setting` keys `settings:*`; merged on each request in `auth.reload_config` |
 
 ## Routing & “state management”
 
